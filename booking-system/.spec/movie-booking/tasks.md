@@ -18,7 +18,7 @@ status: approved
 - [x] Write failing test: two concurrent `POST` bookings for the same seat (two threads, `CountDownLatch`-synchronized start) resolve to exactly one 201 and one 409; read-back shows exactly one booking owns the seat
 - [x] Verify it passes against the existing conditional-UPDATE implementation (add locking/isolation fixes only if the test reveals a gap) — passed as-is; only had to expose `bookingId` on SeatResponse for the read-back assertion
 - [x] Add Flyway seed migration (`V2__seed_demo_data.sql`) with sample movies/showtimes/seats for manual/local exploration
-- [ ] Wire `springdoc-openapi-starter-webmvc-ui` (2.8.6) dependency + `@Tag`/`@Operation` annotations on controllers
+- [x] Wire `springdoc-openapi-starter-webmvc-ui` dependency + `@Tag`/`@Operation` annotations on controllers — used 3.1.1 (targets Boot 4), not plan.md's 2.8.6 (targets Boot 3, same EOL situation as the Boot version itself)
 - [ ] Write failing test: `/swagger-ui.html` and `/v3/api-docs` return 200/3xx
 - [ ] Verify it passes
 - [ ] Write `Makefile` with a `test` target running `./mvnw test` (Testcontainers starts Postgres automatically — no separate DB setup required)
