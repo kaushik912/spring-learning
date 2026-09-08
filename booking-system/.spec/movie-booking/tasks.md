@@ -1,0 +1,24 @@
+---
+status: draft
+---
+# Movie ticket booking backend — Tasks
+
+- [ ] Scaffold Spring Boot 3 project via `spring init` (Maven, Java): web, data-jpa, postgresql, flyway, testcontainers, validation
+- [ ] Add Testcontainers-Postgres test base config (`@ServiceConnection`) and Flyway `V1__init_schema.sql` (movie, showtime, seat, booking tables — FKs, `NOT NULL`, `UNIQUE(showtime_id, seat_label)` on seat)
+- [ ] Write failing test: `GET /movies` returns all movies (read-back after inserting fixtures via repository)
+- [ ] Implement Movie entity/repository/service/controller to pass it
+- [ ] Write failing test: `GET /movies/{id}/showtimes` returns only that movie's showtimes
+- [ ] Implement Showtime entity/repository/service/controller to pass it
+- [ ] Write failing test: `GET /showtimes/{id}` returns the seat map with each seat's id/label/status
+- [ ] Implement Seat entity/repository and showtime-detail endpoint to pass it
+- [ ] Write failing test: `POST /showtimes/{id}/bookings` with available seats returns 201 with the booking + seats, and a follow-up `GET /showtimes/{id}` read-back shows those seats `BOOKED`
+- [ ] Implement Booking entity + booking service (conditional `UPDATE ... WHERE status='AVAILABLE'` per seat, single `@Transactional` method) + controller to pass it
+- [ ] Write failing test: booking a set that includes an already-booked seat returns 409 and books nothing — read-back shows the other requested seats still `AVAILABLE`
+- [ ] Implement rollback/error-mapping (`@ControllerAdvice`) to pass it
+- [ ] Write failing test: two concurrent `POST` bookings for the same seat (two threads, `CountDownLatch`-synchronized start) resolve to exactly one 201 and one 409; read-back shows exactly one booking owns the seat
+- [ ] Verify it passes against the existing conditional-UPDATE implementation (add locking/isolation fixes only if the test reveals a gap)
+- [ ] Add Flyway seed migration (`V2__seed_demo_data.sql`) with sample movies/showtimes/seats for manual/local exploration
+- [ ] Wire `springdoc-openapi-starter-webmvc-ui` (2.8.6) dependency + `@Tag`/`@Operation` annotations on controllers
+- [ ] Write failing test: `/swagger-ui.html` and `/v3/api-docs` return 200/3xx
+- [ ] Verify it passes
+- [ ] Write `Makefile` with a `test` target running `./mvnw test` (Testcontainers starts Postgres automatically — no separate DB setup required)

@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 ---
 # Movie ticket booking backend — Plan
 
