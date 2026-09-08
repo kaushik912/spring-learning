@@ -1,11 +1,12 @@
 # Spring Learning
 
-Hands-on workspace for learning Spring Boot microservices architecture — config server,
-service discovery, API gateway, async messaging (Kafka), distributed tracing — by reading
-and running a real, fully-built reference app section by section.
+Umbrella repo for hands-on Spring / Spring Boot learning projects. Each subdirectory is
+a self-contained learning workspace.
 
-Based on the reference project: [`reference_repos/fully-completed-microservices-Java-Springboot`](../reference_repos/fully-completed-microservices-Java-Springboot)
-(kept untouched; this workspace lives alongside it).
+## Projects
 
-See `MISSION.md` for goals/scope, `lessons/` and `learning-records/` for session-by-session
-progress, and `known-issues.md` for open findings.
+- [`learning-microservices/`](learning-microservices/) — learning Spring Boot microservices
+  architecture (config server, service discovery, API gateway, async messaging via Kafka,
+  distributed tracing) by reading and running a real reference app section by section.
+  Based on [`reference_repos/fully-completed-microservices-Java-Springboot`](../reference_repos/fully-completed-microservices-Java-Springboot)
+  (kept untouched; this workspace lives alongside it). See its `MISSION.md`.

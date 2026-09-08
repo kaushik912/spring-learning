@@ -129,6 +129,6 @@ missed setting.
 
 - This is a *fully completed* reference repo (one big "completed" commit, no incremental
   history) — these aren't regressions, they're pre-existing gaps in the original code.
-- Found via `~/github_projs/spring-learning/lessons/0001` through `0010` — each lesson
+- Found via `~/github_projs/spring-learning/learning-microservices/lessons/0001` through `0010` — each lesson
   has the full context (what was tried, what broke, what the evidence showed) if more detail is
   needed than this summary.
