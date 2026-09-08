@@ -9,8 +9,8 @@ status: approved
 - [x] Implement Movie entity/repository/service/controller to pass it
 - [x] Write failing test: `GET /movies/{id}/showtimes` returns only that movie's showtimes
 - [x] Implement Showtime entity/repository/service/controller to pass it
-- [ ] Write failing test: `GET /showtimes/{id}` returns the seat map with each seat's id/label/status
-- [ ] Implement Seat entity/repository and showtime-detail endpoint to pass it
+- [x] Write failing test: `GET /showtimes/{id}` returns the seat map with each seat's id/label/status
+- [x] Implement Seat entity/repository and showtime-detail endpoint to pass it
 - [ ] Write failing test: `POST /showtimes/{id}/bookings` with available seats returns 201 with the booking + seats, and a follow-up `GET /showtimes/{id}` read-back shows those seats `BOOKED`
 - [ ] Implement Booking entity + booking service (conditional `UPDATE ... WHERE status='AVAILABLE'` per seat, single `@Transactional` method) + controller to pass it
 - [ ] Write failing test: booking a set that includes an already-booked seat returns 409 and books nothing — read-back shows the other requested seats still `AVAILABLE`

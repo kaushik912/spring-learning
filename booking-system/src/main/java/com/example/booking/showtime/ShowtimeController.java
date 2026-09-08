@@ -20,4 +20,9 @@ public class ShowtimeController {
 		return showtimeService.listShowtimesForMovie(movieId).stream().map(ShowtimeResponse::from).toList();
 	}
 
+	@GetMapping("/showtimes/{showtimeId}")
+	public ShowtimeDetailResponse getShowtime(@PathVariable Long showtimeId) {
+		return showtimeService.getShowtimeDetail(showtimeId);
+	}
+
 }
