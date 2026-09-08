@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Lesson 2 — The Customer Service</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<div class="kicker">Curriculum Section 6 · Lesson 2 of the course</div>
+<h1>The Customer Service</h1>
+<p class="lede">The first real microservice: a self-contained REST API over its own MongoDB database, wired to the config server you ran in Lesson 1.</p>
+
+<h2>Why this exists</h2>
+<p>This is the template every other service in this repo copies. Six pieces, each with exactly one job. Once this shape is familiar, Order, Payment, and Product services will look like variations on the same theme, not new things to learn.</p>
+
+<h2>The six-layer shape</h2>
+<table>
+  <tr><th>Layer</th><th>Class</th><th>Job</th></tr>
+  <tr><td>Entity</td><td><code>Customer</code></td><td>What's actually stored in MongoDB</td></tr>
+  <tr><td>Repository</td><td><code>CustomerRepository</code></td><td>Talks to the database — no SQL/queries written by hand</td></tr>
+  <tr><td>Request DTO</td><td><code>CustomerRequest</code></td><td>What a client is allowed to send in</td></tr>
+  <tr><td>Response DTO</td><td><code>CustomerResponse</code></td><td>What a client is allowed to see out</td></tr>
+  <tr><td>Mapper</td><td><code>CustomerMapper</code></td><td>Converts between Entity and DTOs</td></tr>
+  <tr><td>Service</td><td><code>CustomerService</code></td><td>The actual business logic</td></tr>
+  <tr><td>Controller</td><td><code>CustomerController</code></td><td>HTTP in, HTTP out</td></tr>
+</table>
+
+<div class="callout">
+  <span class="label">Why not just return the Entity directly?</span>
+  The DTO layer looks like duplication (same fields as <code>Customer</code>) but it's a deliberate seam: the database shape and the API shape are allowed to drift independently. Add an internal-only field to <code>Customer</code> tomorrow and it does <em>not</em> leak to clients unless you also add it to <code>CustomerResponse</code>.
+</div>
+
+<h2>Entity → Repository</h2>
+<p><code>Customer</code> is a plain Mongo document — <code>@Document</code> maps the class to a collection, <code>@Id</code> marks the Mongo <code>_id</code>:</p>
+<pre><code>@Document
+public class Customer {
+  @Id
+  private String id;
+  private String firstname;
+  private String lastname;
+  private String email;
+  private Address address;   // nested object, not a foreign key — Mongo embeds it
+}</code></pre>
+<p>The repository is one line. Extending <code>MongoRepository&lt;Customer, String&gt;</code> gives <code>save</code>, <code>findById</code>, <code>findAll</code>, <code>deleteById</code> for free — Spring Data generates the implementation:</p>
+<pre><code>public interface CustomerRepository extends MongoRepository&lt;Customer, String&gt; { }</code></pre>
+<p class="source-links">customer/.../Customer.java · CustomerRepository.java</p>
+
+<h2>Request/Response DTOs — Java records</h2>
+<p>Both DTOs are <strong>records</strong>, not classes — immutable, no Lombok needed for getters. <code>CustomerRequest</code> carries Bean Validation annotations that run automatically before the controller method body executes:</p>
+<pre><code>public record CustomerRequest(
+    String id,
+    @NotNull(message = "Customer firstname is required") String firstname,
+    @NotNull(message = "Customer firstname is required") String lastname,
+    @NotNull @Email(message = "...not a valid email address") String email,
+    Address address
+) {}</code></pre>
+<p class="source-links">customer/.../CustomerRequest.java · CustomerResponse.java</p>
+
+<h2>Mapper — the seam, made concrete</h2>
+<p><code>CustomerMapper</code> is hand-written (no MapStruct here) — two small methods, <code>toCustomer</code> and <code>fromCustomer</code>, converting each direction.</p>
+<p class="source-links">customer/.../CustomerMapper.java</p>
+
+<h2>Service — the actual logic</h2>
+<p>Notably: <code>updateCustomer</code> does a partial merge, not a blind overwrite — blank/null fields in the request are left alone (<code>mergeCustomer</code>), and a missing customer throws <code>CustomerNotFoundException</code>, mapped elsewhere to a proper HTTP error by <code>GlobalExceptionHandler</code>.</p>
+<pre><code>public void updateCustomer(CustomerRequest request) {
+  var customer = repository.findById(request.id())
+      .orElseThrow(() -> new CustomerNotFoundException(...));
+  mergeCustomer(customer, request);   // only overwrite non-blank fields
+  repository.save(customer);
+}</code></pre>
+<p class="source-links">customer/.../CustomerService.java</p>
+
+<h2>Controller — five endpoints, one resource</h2>
+<table>
+  <tr><th>Method</th><th>Path</th><th>Does</th></tr>
+  <tr><td>POST</td><td><code>/api/v1/customers</code></td><td>create, returns the new id</td></tr>
+  <tr><td>PUT</td><td><code>/api/v1/customers</code></td><td>update (id in body)</td></tr>
+  <tr><td>GET</td><td><code>/api/v1/customers</code></td><td>list all</td></tr>
+  <tr><td>GET</td><td><code>/api/v1/customers/{id}</code></td><td>get one</td></tr>
+  <tr><td>GET</td><td><code>/api/v1/customers/exists/{id}</code></td><td>boolean existence check — this one's a hint for later: Order service will call it before accepting an order</td></tr>
+  <tr><td>DELETE</td><td><code>/api/v1/customers/{id}</code></td><td>delete</td></tr>
+</table>
+<p class="source-links">customer/.../CustomerController.java</p>
+
+<h2>Hands-on: run the full CRUD loop</h2>
+
+<div class="step">
+  <span class="step-num">STEP 1</span>
+  <p>Config server (Lesson 1) and the <code>mongodb</code> container should still be running. Confirm: <code>docker compose ps</code> shows <code>mongo_db</code> up, and <code>curl http://localhost:8888/customer-service/default</code> still responds.</p>
+</div>
+
+<div class="step">
+  <span class="step-num">STEP 2</span>
+  <p>Start the customer service:</p>
+  <pre><code>cd services/customer
+./mvnw spring-boot:run</code></pre>
+  <p>Watch the log — it reads its Mongo config <em>from</em> the config server, not from its own <code>application.yml</code>, then connects to Mongo on port 27017.</p>
+</div>
+
+<div class="step">
+  <span class="step-num">STEP 3</span>
+  <p>Create a customer:</p>
+  <pre><code>curl -X POST http://localhost:8090/api/v1/customers \
+  -H "Content-Type: application/json" \
+  -d '{
+    "firstname": "Ada",
+    "lastname": "Lovelace",
+    "email": "ada@example.com",
+    "address": { "street": "Main St", "houseNumber": "1", "zipCode": "00001" }
+  }'</code></pre>
+  <p>Response is the new customer's Mongo <code>id</code> — copy it for the next steps.</p>
+</div>
+
+<div class="step">
+  <span class="step-num">STEP 4</span>
+  <p>Fetch it back, list all, and check existence (swap in your id):</p>
+  <pre><code>curl http://localhost:8090/api/v1/customers/&lt;id&gt;
+curl http://localhost:8090/api/v1/customers
+curl http://localhost:8090/api/v1/customers/exists/&lt;id&gt;</code></pre>
+  <p><span class="check">✓</span> Also open <code>http://localhost:8081</code> (mongo-express) and look at the <code>customer</code> database — your document is really there.</p>
+</div>
+
+<div class="step">
+  <span class="step-num">STEP 5</span>
+  <p>Try triggering the validation you read above — omit the email:</p>
+  <pre><code>curl -X POST http://localhost:8090/api/v1/customers \
+  -H "Content-Type: application/json" \
+  -d '{ "firstname": "No", "lastname": "Email" }'</code></pre>
+  <p>You should get a 400 with a validation message, not a 500 or a silently-saved bad record — that's <code>GlobalExceptionHandler</code> + <code>@Valid</code> doing their job.</p>
+</div>
+
+<h2>Check your recall</h2>
+<details>
+  <summary>Why does this service have both a <code>Customer</code> class and a <code>CustomerResponse</code> record with identical-looking fields?</summary>
+  <p>They represent different concerns — DB shape vs. API contract — and are allowed to diverge. The mapper is the only place that knows both.</p>
+</details>
+<details>
+  <summary>What happens to a blank <code>firstname</code> sent in a <code>PUT</code> update request?</summary>
+  <p>Nothing — <code>mergeCustomer</code> only overwrites a field if the incoming value is non-blank, so existing data survives a partial update.</p>
+</details>
+
+<h3>Primary source</h3>
+<p><a href="https://docs.spring.io/spring-data/mongodb/reference/repositories/core-concepts.html" target="_blank">Spring Data MongoDB — repository core concepts</a> — how method names like <code>findById</code> get implemented without you writing a query.</p>
+
+<div class="ask-agent">
+  Want to see what happens if you stop the config server and restart customer-service (does it still boot)? Ask your agent — worth trying, since <code>spring.config.import</code> was <code>optional:</code>.
+</div>
+
+<div class="nav">
+  <span>&larr; <a href="0001-config-server.html">Lesson 1 — Config Server</a></span>
+  <span>Next: <a href="0003-order-service.html">Section 7 — Order service</a> &rarr;</span>
+</div>
+
+</body>
+</html>

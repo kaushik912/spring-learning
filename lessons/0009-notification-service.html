@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Lesson 9 — The Notification Service</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<div class="kicker">Curriculum Section 15 · Lesson 9 of the course</div>
+<h1>The Notification Service</h1>
+<p class="lede">The other half of Lesson 8's "notice board." Order and Payment have been pinning notes to <code>order-topic</code>/<code>payment-topic</code> since Lesson 4 — this is the service that finally reads them and sends real email.</p>
+
+<h2>The consumer: one class, two listeners</h2>
+<pre><code>@KafkaListener(topics = "payment-topic")
+public void consumePaymentSuccessNotifications(PaymentConfirmation paymentConfirmation) {
+  repository.save(Notification.builder()
+      .type(PAYMENT_CONFIRMATION)
+      .notificationDate(LocalDateTime.now())
+      .paymentConfirmation(paymentConfirmation)
+      .build());
+  emailService.sendPaymentSuccessEmail(...);
+}
+
+@KafkaListener(topics = "order-topic")
+public void consumeOrderConfirmationNotifications(OrderConfirmation orderConfirmation) {
+  repository.save(Notification.builder()
+      .type(ORDER_CONFIRMATION)
+      .notificationDate(LocalDateTime.now())
+      .orderConfirmation(orderConfirmation)
+      .build());
+  emailService.sendOrderConfirmationEmail(...);
+}</code></pre>
+<p class="source-links">notification/.../kafka/NotificationsConsumer.java</p>
+<p><code>@KafkaListener</code> is the mirror image of <code>@KafkaTemplate.send()</code> from Lesson 8 — Spring subscribes this method to the named topic and invokes it for every message. Each message does two things: gets archived as a <code>Notification</code> document in MongoDB (an audit trail — same <code>@Document</code> pattern as Customer, Lesson 2), then triggers a real email via <code>EmailService</code>.</p>
+
+<div class="callout">
+  <span class="label">Notice: the consumer group id looks like two groups, but it's one</span>
+  <code>notification-service.yml</code> sets <code>group-id: paymentGroup,orderGroup</code>. That reads like "subscribe to two groups," but Spring's <code>group-id</code> property takes a single string — the actual consumer group Kafka sees is the literal string <code>"paymentGroup,orderGroup"</code>, comma included. Harmless here (both listeners sharing one group name in the same app is fine — a consumer group is just an offset-tracking bucket, and each listener tracks its own topic's offsets within it), but almost certainly not what whoever wrote it intended to express.
+</div>
+
+<h2>Sending the email</h2>
+<p><code>EmailService</code> uses a real SMTP client (<code>JavaMailSender</code>) pointed at <strong>MailDev</strong> (the <code>mail-dev</code> container from <code>docker-compose.yml</code> since Lesson 1 — a fake SMTP server that catches everything instead of delivering it), renders an HTML template with Thymeleaf, and sends it. Both methods are <code>@Async</code> — the Kafka listener thread doesn't block waiting for the email to actually send.</p>
+<p class="source-links">notification/.../email/EmailService.java · EmailTemplates.java · resources/templates/*.html</p>
+
+<h2>Hands-on: watch old <em>and</em> new messages get consumed</h2>
+<p>Notification's config sets <code>auto-offset-reset: earliest</code>, and its consumer group has never consumed before. That combination means something specific worth predicting first.</p>
+
+<div class="callout">
+  <span class="label">Predict before you start it</span>
+  You've already put messages on <code>order-topic</code> and <code>payment-topic</code> in Lesson 8, before Notification service ever existed. Given <code>auto-offset-reset: earliest</code> and a brand-new consumer group, what happens to those old messages the moment Notification starts up — are they gone, or does it process them retroactively?
+</div>
+
+<div class="step">
+  <span class="step-num">STEP 1</span>
+  <pre><code>cd services/notification
+./mvnw spring-boot:run</code></pre>
+  <p>Runs on port <strong>8040</strong>. MongoDB doesn't need a database created up front (unlike Postgres) — Mongo creates <code>notification</code> on first write automatically.</p>
+</div>
+
+<div class="step">
+  <span class="step-num">STEP 2</span>
+  <p><span class="check">✓</span> Watch the console log immediately on startup — you should see <code>Consuming the message from order-topic Topic:: ...</code> / <code>...payment-topic...</code> for the messages from Lesson 8, processed the moment the listener subscribes. That answers the prediction above: <strong>nothing is lost</strong> — <code>earliest</code> + a fresh group means it replays the entire topic history from offset 0.</p>
+</div>
+
+<div class="step">
+  <span class="step-num">STEP 3</span>
+  <p>Open MailDev's inbox: <a href="http://localhost:1080" target="_blank">http://localhost:1080</a> — you should see real (fake) emails for those old messages, rendered from the Thymeleaf templates.</p>
+</div>
+
+<div class="step">
+  <span class="step-num">STEP 4</span>
+  <p>Now place a brand new order through the gateway (same shape as Lesson 8, different reference/product) while Notification is running. This time watch it happen live — the console log and MailDev inbox should update within a second or two of the order succeeding.</p>
+</div>
+
+<div class="step">
+  <span class="step-num">STEP 5</span>
+  <p>Check the audit trail landed in Mongo too, via mongo-express (<code>localhost:8081</code>, login <code>admin</code>/<code>pass</code> — Lesson 2) → <code>notification</code> database → <code>notification</code> collection. Each document should hold the full <code>orderConfirmation</code>/<code>paymentConfirmation</code> payload, not just a summary.</p>
+</div>
+
+<h2>Check your recall</h2>
+<details>
+  <summary>Why did messages from Lesson 8 — sent before Notification service even existed — still get processed?</summary>
+  <p>Kafka doesn't delete messages when they're produced; they sit on the topic until they age out (by retention policy) regardless of whether anyone's consuming. A consumer only "misses" messages that existed <em>before</em> its group first committed an offset if it starts with <code>auto-offset-reset: latest</code> instead of <code>earliest</code>. This consumer group had never consumed before, so <code>earliest</code> meant "start from the very beginning of the topic."</p>
+</details>
+<details>
+  <summary>What's the actual, functional consequence of the <code>"paymentGroup,orderGroup"</code> naming mistake?</summary>
+  <p>None, in this exact setup — it's one process with two listeners sharing one (oddly-named) consumer group, which Kafka allows and handles correctly per-topic. It would only become a real problem if someone later split payment and order consumption into two separate services expecting two separate groups, and copied this string verbatim.</p>
+</details>
+
+<h3>Primary source</h3>
+<p><a href="https://docs.spring.io/spring-kafka/reference/kafka/receiving-messages/listener-annotation.html" target="_blank">Spring for Apache Kafka — <code>@KafkaListener</code> reference</a> — and for the offset-reset behavior specifically, <a href="https://kafka.apache.org/documentation/#consumerconfigs_auto.offset.reset" target="_blank">Kafka's own <code>auto.offset.reset</code> docs</a>.</p>
+
+<div class="ask-agent">
+  Curious what happens if you stop Notification, produce a few more messages, then restart it — does it replay everything again, or only the new ones? Good follow-up experiment — ask your agent to walk through why.
+</div>
+
+<div class="nav">
+  <span>&larr; <a href="0008-async-kafka.html">Lesson 8 — Async Communication (Kafka)</a></span>
+  <span>Next: <a href="0010-distributed-tracing.html">Section 16 — Distributed Tracing</a> &rarr;</span>
+</div>
+
+</body>
+</html>

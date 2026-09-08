@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Lesson 4 — The Payment Service</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<div class="kicker">Curriculum Section 8 · Lesson 4 of the course</div>
+<h1>The Payment Service</h1>
+<p class="lede">The simplest service in the whole repo — one endpoint, no queries, no update, no delete. It exists to do exactly one thing: record that a payment happened, then tell the world about it.</p>
+
+<h2>Entity: same shape as Order, deliberately isolated</h2>
+<pre><code>@Entity
+@Table(name = "payment")
+public class Payment {
+  @Id @GeneratedValue
+  private Integer id;
+  private BigDecimal amount;
+  @Enumerated(EnumType.STRING)
+  private PaymentMethod paymentMethod;
+  private Integer orderId;      // <- just an int, same rule as Order.customerId in Lesson 3
+  @CreatedDate private LocalDateTime createdDate;
+  @LastModifiedDate private LocalDateTime lastModifiedDate;
+}</code></pre>
+<p class="source-links">payment/.../payment/Payment.java</p>
+<p>Postgres + JPA again, same as Order (see the <a href="../reference/big-picture.html">big picture</a> reference for why every service picks its own database independently). <code>orderId</code> is a bare integer — Payment's database has zero knowledge of Order's database, exactly like Order↔Customer in Lesson 3.</p>
+
+<h2>A new idea: each service defines its own local "Customer"</h2>
+<p>Look at <code>PaymentRequest</code> — it carries a nested <code>Customer</code> record:</p>
+<pre><code>public record PaymentRequest(
+    Integer id, BigDecimal amount, PaymentMethod paymentMethod,
+    Integer orderId, String orderReference,
+    Customer customer
+) {}
+
+// payment/Customer.java — Payment service's OWN definition, not shared with customer-service
+public record Customer(String id, String firstname, String lastname, String email) {}</code></pre>
+<div class="callout">
+  <span class="label">This is not a bug or duplication mistake</span>
+  Payment service does <em>not</em> import a shared <code>Customer</code> class from customer-service. It defines its own minimal record with only the four fields it actually needs (to email a receipt later). This is a real microservices principle: <strong>no shared domain model library between services.</strong> Each service owns a narrow, local view of a concept it doesn't own. If customer-service adds 10 new fields to its real <code>Customer</code> tomorrow, Payment service is completely unaffected — it never sees them.
+</div>
+
+<h2>Service: save, then fire an async notification</h2>
+<pre><code>public Integer createPayment(PaymentRequest request) {
+  var payment = repository.save(mapper.toPayment(request));
+
+  notificationProducer.sendNotification(
+      new PaymentNotificationRequest(
+          request.orderReference(), request.amount(), request.paymentMethod(),
+          request.customer().firstname(), request.customer().lastname(), request.customer().email()
+      )
+  );
+  return payment.getId();
+}</code></pre>
+<p class="source-links">payment/.../payment/PaymentService.java · notification/NotificationProducer.java</p>
+
+<div class="callout">
+  <span class="label">First taste of async (Kafka) — full detail comes in Section 13</span>
+  <code>notificationProducer.sendNotification(...)</code> calls <code>kafkaTemplate.send(message)</code>, which is <strong>fire-and-forget</strong> — it hands the message to Kafka's client library and returns immediately, without waiting for delivery confirmation. Compare this to Order's <code>customerClient.findCustomerById(...)</code> from Lesson 3, which blocks until it gets an HTTP response. Same goal (tell another part of the system something happened) — two completely different communication styles. This is the "notice board" from the big-picture table.
+</div>
+
+<h2>Controller: one endpoint, on purpose</h2>
+<pre><code>@PostMapping
+public ResponseEntity&lt;Integer&gt; createPayment(@RequestBody @Valid PaymentRequest request) {
+  return ResponseEntity.ok(service.createPayment(request));
+}</code></pre>
+<p>No <code>GET</code>, no list, no lookup-by-id. Payment records aren't meant to be browsed through this service's own API in this design — a real system would likely add read endpoints, but this teaching repo keeps Payment intentionally narrow: write-only, from the outside.</p>
+
+<h2>Hands-on: create a payment</h2>
+
+<div class="step">
+  <span class="step-num">STEP 1</span>
+  <p>The <code>payment</code> Postgres database has already been created for you this time (same missing-DB issue as Order in Lesson 3 — fixed proactively).</p>
+</div>
+
+<div class="step">
+  <span class="step-num">STEP 2</span>
+  <pre><code>cd services/payment
+./mvnw spring-boot:run</code></pre>
+  <p>Runs on port <strong>8060</strong>.</p>
+</div>
+
+<div class="step">
+  <span class="step-num">STEP 3</span>
+  <pre><code>curl -X POST http://localhost:8060/api/v1/payments \
+  -H "Content-Type: application/json" \
+  -d '{
+    "amount": 49.99,
+    "paymentMethod": "PAYPAL",
+    "orderId": 1,
+    "orderReference": "some-ref-123",
+    "customer": {
+      "id": "abc123",
+      "firstname": "Ada",
+      "lastname": "Lovelace",
+      "email": "ada@example.com"
+    }
+  }'</code></pre>
+  <p><span class="check">✓</span> Expect a plain integer back — the new payment's id. Verify it landed in Postgres:</p>
+  <pre><code>docker exec ms_pg_sql psql -U alibou -d payment -c 'SELECT * FROM payment;'</code></pre>
+</div>
+
+<div class="callout">
+  <span class="label">Verified: what actually happens with Kafka down</span>
+  This repo's <code>docker-compose.yml</code> Kafka image currently won't start (unrelated to the course: <code>cp-kafka:latest</code> now defaults to KRaft mode, the compose file still configures old-style Zookeeper mode — proper fix lands in Section 13). Two real, confirmed effects on <code>createPayment</code>:
+  <ol>
+    <li><code>kafkaTemplate.send()</code> isn't truly non-blocking on the <em>first</em> call — the producer has to fetch topic metadata first, and blocks up to <code>max.block.ms</code> (Kafka's default: 60s) trying to reach a broker that isn't there. We added <code>max.block.ms: 3000</code> to <code>payment-service.yml</code> on the config server so it fails in 3s instead of hanging a minute.</li>
+    <li>When it does fail, <code>createPayment</code> has no try/catch around the Kafka call — the exception bubbles up as an HTTP <strong>500</strong>. But <code>repository.save(...)</code> already ran and committed <em>before</em> that failure — so <strong>the payment row is saved in Postgres even though the client got a 500.</strong> Verify it yourself: <code>docker exec ms_pg_sql psql -U alibou -d payment -c 'SELECT * FROM payment;'</code></li>
+  </ol>
+  That second point is a genuine distributed-systems trap, not specific to this repo: a failed response doesn't always mean nothing happened. A caller that retries on 500 here would create a second payment row for the same order.
+</div>
+
+<h2>Check your recall</h2>
+<details>
+  <summary>Why does Payment service define its own <code>Customer</code> record instead of reusing customer-service's?</summary>
+  <p>No shared domain model across services — each service owns a narrow local view of only the fields it needs. Keeps services independently deployable: customer-service can change its real <code>Customer</code> class freely without breaking Payment.</p>
+</details>
+<details>
+  <summary>If Kafka is completely down, does <code>POST /api/v1/payments</code> fail?</summary>
+  <p>No — the HTTP response returns successfully (payment is saved to Postgres regardless) because <code>kafkaTemplate.send()</code> is async/fire-and-forget. The notification message is simply lost/retried in the background, not blocking the caller. Contrast with a failed synchronous call (like Order → Customer over HTTP), which <em>does</em> fail the whole request.</p>
+</details>
+
+<h3>Primary source</h3>
+<p><a href="https://docs.spring.io/spring-kafka/reference/kafka/sending-messages.html" target="_blank">Spring for Apache Kafka — sending messages</a> — read the section on <code>KafkaTemplate</code> return types to see exactly why <code>.send()</code> doesn't block by default.</p>
+
+<div class="ask-agent">
+  Curious what a <em>synchronous</em>, blocking Kafka send would look like instead (calling <code>.get()</code> on the returned future)? Ask your agent — good contrast to hold onto before Section 13.
+</div>
+
+<div class="nav">
+  <span>&larr; <a href="0003-order-service.html">Lesson 3 — Order Service</a></span>
+  <span>Next: <a href="0005-http-communication.html">Section 9 — Microservices communication via HTTP</a> &rarr;</span>
+</div>
+
+</body>
+</html>

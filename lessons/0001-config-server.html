@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Lesson 1 — The Config Server</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<div class="kicker">Curriculum Section 5 · Lesson 1 of the course</div>
+<h1>The Config Server</h1>
+<p class="lede">One place holds every microservice's settings, instead of each service carrying its own <code>application.yml</code> in isolation.</p>
+
+<h2>Why this exists</h2>
+<p>Picture 8 services, each with database credentials, ports, and feature flags baked into its own jar. Change a password and you now edit and redeploy 8 things. The <strong>config server</strong> flips this: it's one small Spring Boot app whose entire job is to serve config files over HTTP. Every other service asks it "what are my settings?" on startup instead of shipping the answer itself.</p>
+
+<h2>How this repo does it</h2>
+<p>The whole server is one annotation:</p>
+<pre><code>@EnableConfigServer
+@SpringBootApplication
+public class ConfigServerApplication { ... }</code></pre>
+<p class="source-links">services/config-server/src/main/java/.../ConfigServerApplication.java</p>
+
+<p>Its own <code>application.yml</code> tells it to run in <strong>native mode</strong> — read config files straight off the classpath, instead of the more common setup of pulling them from a Git repo:</p>
+<pre><code>server:
+  port: 8888
+spring:
+  profiles:
+    active: native
+  cloud:
+    config:
+      server:
+        native:
+          search-locations: classpath:/configurations</code></pre>
+<p class="source-links">services/config-server/src/main/resources/application.yml</p>
+
+<p>Inside <code>configurations/</code> there's one YAML file per service — <code>customer-service.yml</code>, <code>order-service.yml</code>, <code>gateway-service.yml</code>, etc. The filename <em>is</em> the lookup key. <code>customer-service.yml</code> holds the customer service's Mongo connection details:</p>
+<pre><code>server:
+  port: 8090
+spring:
+  data:
+    mongodb:
+      username: alibou
+      password: alibou
+      host: localhost
+      port: 27017
+      database: customer</code></pre>
+<p class="source-links">services/config-server/src/main/resources/configurations/customer-service.yml</p>
+
+<p>And on the other end, the customer service itself just points at the config server and names itself — that name is what gets matched to the filename above:</p>
+<pre><code>spring:
+  config:
+    import: optional:configserver:http://localhost:8888
+  application:
+    name: customer-service</code></pre>
+<p class="source-links">services/customer/src/main/resources/application.yml</p>
+
+<div class="callout">
+  <span class="label">The pattern to remember</span>
+  A client service's <code>spring.application.name</code> is the key. The config server matches it to a file named <code>&lt;that-name&gt;.yml</code> and hands back its contents over plain HTTP, as JSON.
+</div>
+
+<h2>Hands-on: run it and see the config get served</h2>
+
+<div class="step">
+  <span class="step-num">STEP 1</span>
+  <p>Infra containers (Postgres, MongoDB, Kafka, Zipkin, MailDev) should already be up via <code>docker compose up -d</code> in the repo root. Confirm with <code>docker compose ps</code> — all should say <code>running</code>.</p>
+</div>
+
+<div class="step">
+  <span class="step-num">STEP 2</span>
+  <p>Start the config server on its own:</p>
+  <pre><code>cd services/config-server
+./mvnw spring-boot:run</code></pre>
+  <p>Wait for a line like <code>Tomcat started on port 8888</code>.</p>
+</div>
+
+<div class="step">
+  <span class="step-num">STEP 3</span>
+  <p>In another terminal, ask it for customer-service's config directly — this is exactly the request every microservice makes on startup:</p>
+  <pre><code>curl http://localhost:8888/customer-service/default</code></pre>
+  <p>You should get back JSON containing a <code>propertySources</code> entry with the Mongo <code>host</code>, <code>port</code>, and <code>database</code> values from the YAML above. <span class="check">✓</span> That response <em>is</em> centralized config working — no service had to hardcode it.</p>
+</div>
+
+<div class="step">
+  <span class="step-num">STEP 4</span>
+  <p>Try one more: <code>curl http://localhost:8888/order-service/default</code> — different service name, different file, same server.</p>
+</div>
+
+<h2>Check your recall</h2>
+<details>
+  <summary>What does a client service send to the config server so it gets the <em>right</em> file back?</summary>
+  <p>Its <code>spring.application.name</code> — the config server matches that string to a <code>&lt;name&gt;.yml</code> file in <code>configurations/</code>.</p>
+</details>
+<details>
+  <summary>Why "native" mode here instead of the more typical Git-backed config server?</summary>
+  <p>Simplicity for a local/teaching setup — files live on the classpath instead of requiring a separate Git repo to clone and poll. Same contract to clients either way; only the config server's own source of truth changes.</p>
+</details>
+
+<h3>Primary source</h3>
+<p><a href="https://docs.spring.io/spring-cloud-config/reference/server.html" target="_blank">Spring Cloud Config Server reference docs</a> — read the "Environment Repository" section to see the Git-backed option this repo skipped, and why native mode exists as an alternative.</p>
+
+<div class="ask-agent">
+  Stuck, or want to go deeper on anything above (e.g. what <code>optional:</code> in <code>spring.config.import</code> actually does if the server is down)? Ask your agent — that's what it's there for.
+</div>
+
+<div class="nav">
+  <span>&larr; Section 4 (bootstrap) — covered in chat before this workspace existed</span>
+  <span>Next: <a href="0002-customer-service.html">Section 6 — Customer service</a> &rarr;</span>
+</div>
+
+</body>
+</html>

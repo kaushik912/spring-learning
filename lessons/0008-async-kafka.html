@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Lesson 8 — Asynchronous Communication, Fixed For Real</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<div class="kicker">Curriculum Section 13 · Lesson 8 of the course</div>
+<h1>Asynchronous Communication — Fixing Kafka For Real</h1>
+<p class="lede">The notice-board piece from the <a href="../reference/big-picture.html">big picture</a> was already wired into Order and Payment's code since Lesson 4 — it just never had a working broker underneath it. That changes now, and the whole chain from Lesson 7 should finally succeed.</p>
+
+<h2>What was actually broken (an infra bug, not a code bug)</h2>
+<p><code>docker-compose.yml</code> pinned <code>confluentinc/cp-kafka:latest</code> and <code>cp-zookeeper:latest</code>. Confluent's <code>latest</code> tag currently resolves to Kafka 4.x, which <strong>dropped Zookeeper support entirely</strong> in favor of KRaft mode — but the compose file's environment variables (<code>KAFKA_ZOOKEEPER_CONNECT</code>, etc.) are Zookeeper-only config. Result: the container crash-looped from the very first lesson that touched Kafka, with <code>Error: environment variable "KAFKA_PROCESS_ROLES" is not set</code> — because the image expected KRaft config that was never provided.</p>
+<div class="callout">
+  <span class="label">The fix</span>
+  Pinned both images to <code>7.6.1</code> (Confluent Platform 7.6.1 = Kafka 3.7, the last major line with full Zookeeper support) — matching the Zookeeper-style config the compose file already had. Real-world lesson, not specific to this repo: <strong>a floating <code>:latest</code> tag on infrastructure you depend on long-term is a liability</strong> — it can silently break on a plain <code>docker compose pull</code>/recreate, with no code change on your side at all. Pin versions for anything you're not actively tracking upstream releases of.
+</div>
+
+<h2>Declaring topics as code</h2>
+<p>Both Order and Payment declare their Kafka topic as a Spring bean, not just a string scattered in producer code:</p>
+<pre><code>@Configuration
+public class KafkaOrderTopicConfig {
+  @Bean
+  public NewTopic orderTopic() {
+    return TopicBuilder.name("order-topic").build();
+  }
+}</code></pre>
+<p class="source-links">order/.../config/KafkaOrderTopicConfig.java · payment/.../configuration/KafkaPaymentTopicConfig.java</p>
+<p>Spring's <code>KafkaAdmin</code> auto-creates any <code>NewTopic</code> bean against the broker once it's reachable — no manual <code>kafka-topics --create</code> needed. This is why <code>payment-topic</code> may already exist even before you send your first successful message: the topic-creation and the message-sending are two separate concerns.</p>
+
+<h2>Recap: the producers (from Lesson 4), now actually working</h2>
+<p><code>NotificationProducer</code> (Payment) and <code>OrderProducer</code> (Order) haven't changed at all since Lesson 4 — same fire-and-forget <code>kafkaTemplate.send(message)</code> call. The only thing that changed is that a real broker now exists to receive it.</p>
+
+<h2>Hands-on: rerun Lesson 7's order, expect it to actually work</h2>
+
+<div class="step">
+  <span class="step-num">STEP 1</span>
+  <p>Confirm Kafka's healthy:</p>
+  <pre><code>docker compose ps kafka zookeeper
+docker exec ms_kafka kafka-topics --bootstrap-server localhost:9092 --list</code></pre>
+  <p>Both containers <code>Up</code>, and you should see <code>payment-topic</code> listed already.</p>
+</div>
+
+<div class="step">
+  <span class="step-num">STEP 2</span>
+  <p>Restart order-service and payment-service (Ctrl+C, <code>./mvnw spring-boot:run</code> again) so their Kafka producers reconnect cleanly against the now-working broker.</p>
+</div>
+
+<div class="step">
+  <span class="step-num">STEP 3</span>
+  <p>Fire the <em>exact same</em> order request from Lesson 7, Step 4 (fresh product/customer ids if you want a clean read):</p>
+  <pre><code>curl -i -X POST http://localhost:8222/api/v1/orders \
+  -H "Content-Type: application/json" \
+  -d '{
+    "reference": "order-ref-002",
+    "amount": 199.98,
+    "paymentMethod": "PAYPAL",
+    "customerId": "&lt;your customer id&gt;",
+    "products": [ { "productId": 2, "quantity": 1 } ]
+  }'</code></pre>
+  <p><span class="check">✓</span> Expect <strong>200</strong> with a real order id this time — the whole chain (Customer lookup → Product purchase → Order+OrderLine save → Payment call → Kafka publish) completed without throwing.</p>
+</div>
+
+<div class="step">
+  <span class="step-num">STEP 4</span>
+  <p>Verify, the same way you did after Lesson 7's failure — but this time expect real rows, not an orphan:</p>
+  <pre><code>docker exec ms_pg_sql psql -U alibou -d order -c 'SELECT * FROM customer_order;'
+docker exec ms_pg_sql psql -U alibou -d payment -c 'SELECT * FROM payment;'</code></pre>
+  <p>This time the <code>payment.order_id</code> should point at a row that <em>actually exists</em> in <code>customer_order</code> — the exact inconsistency from Lesson 7 is gone.</p>
+</div>
+
+<div class="step">
+  <span class="step-num">STEP 5</span>
+  <p>Read the real event off the topic directly — nobody's consuming it yet (that's next lesson), so it's just sitting in Kafka:</p>
+  <pre><code>docker exec ms_kafka kafka-console-consumer \
+  --bootstrap-server localhost:9092 \
+  --topic order-topic \
+  --from-beginning \
+  --max-messages 1</code></pre>
+  <p><span class="check">✓</span> You should see the raw JSON <code>OrderConfirmation</code> payload — reference, amount, payment method, the customer, and the purchased products. This is the actual message a Notification service will pick up in Section 15.</p>
+</div>
+
+<h2>Check your recall</h2>
+<details>
+  <summary>Why did fixing this require no changes to any service's Java code?</summary>
+  <p>The bug was entirely in infrastructure (the Docker image version), not application logic. <code>NotificationProducer</code> and <code>OrderProducer</code> were correct from Lesson 4 onward — they just had nothing listening on <code>localhost:9092</code> to send to.</p>
+</details>
+<details>
+  <summary>Now that Kafka works, is the <code>max.block.ms: 3000</code> override from Lesson 4 still doing anything?</summary>
+  <p>Effectively no — with a healthy broker, metadata resolves almost instantly, well under 3 seconds, so the lower ceiling never gets hit. It's harmless to leave in place (still a safety net if Kafka ever goes down again) rather than something that needs reverting.</p>
+</details>
+
+<h3>Primary source</h3>
+<p><a href="https://docs.spring.io/spring-kafka/reference/kafka/configuring-topics.html" target="_blank">Spring for Apache Kafka — configuring topics</a> — how <code>NewTopic</code> beans and <code>KafkaAdmin</code> relate, and when auto-creation via bean vs. broker-side <code>auto.create.topics.enable</code> differ.</p>
+
+<div class="ask-agent">
+  Curious what a <em>compensating</em> fix for Lesson 7's inconsistency would look like now, given Kafka's healthy again — e.g. a cleanup job for any already-orphaned payment rows from before this fix? Ask your agent.
+</div>
+
+<div class="nav">
+  <span>&larr; <a href="0007-api-gateway.html">Lesson 7 — API Gateway</a></span>
+  <span>Next: <a href="0009-notification-service.html">Section 15 — Notification service</a> &rarr;</span>
+</div>
+
+</body>
+</html>

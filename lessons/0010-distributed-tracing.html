@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Lesson 10 — Distributed Tracing</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<div class="kicker">Curriculum Section 16 · Lesson 10 of the course</div>
+<h1>Distributed Tracing</h1>
+<p class="lede">The tracking-slip piece from the <a href="../reference/big-picture.html">big picture</a> — running since Lesson 1's <code>docker-compose.yml</code>, never actually used until now. This is also the lesson that fulfills this whole workspace's stated goal: watching one request travel across every service, visually.</p>
+
+<h2>Zero new code — again</h2>
+<p>Go back and look at Lesson 1's <code>pom.xml</code> excerpt: every service has had <code>micrometer-tracing-bridge-brave</code> and <code>zipkin-reporter-brave</code> on its classpath since Section 4 (Bootstrap). The only thing missing this whole time was <em>using</em> it, and that turns on via one setting, sitting in a file we haven't looked closely at yet:</p>
+<pre><code>management:
+  tracing:
+    sampling:
+      probability: 1.0</code></pre>
+<p class="source-links">config-server/.../configurations/application.yml</p>
+
+<div class="callout">
+  <span class="label">New idea: <code>application.yml</code> is the shared-defaults file</span>
+  Every other config file you've read has been named after a specific service (<code>customer-service.yml</code>, <code>order-service.yml</code>...). This one is literally named <code>application.yml</code> — Spring Cloud Config's native mode treats that filename specially: its contents apply to <strong>every</strong> client, merged underneath each service's own specific file. This is where the shared Eureka URL and this tracing setting live, so every service gets them without repeating the config 8 times.
+</div>
+
+<p><code>sampling.probability: 1.0</code> means "trace 100% of requests" — fine for a demo with a handful of manual test calls, wildly expensive at real production traffic (recording and shipping a trace has real CPU/network cost per request). A real system usually samples a small fraction (e.g. <code>0.1</code> = 10%) and relies on always-sample-on-error rules for the rest.</p>
+
+<p>Where do the traces go? Nowhere configured explicitly — Spring Boot defaults <code>management.zipkin.tracing.endpoint</code> to <code>http://localhost:9411/api/v2/spans</code> the moment <code>zipkin-reporter-brave</code> is on the classpath, which happens to be exactly where the <code>zipkin</code> container from <code>docker-compose.yml</code> listens. Another "convention over configuration" default, same pattern as everything else in this course.</p>
+
+<h2>Hands-on: watch one request cross the whole system</h2>
+
+<div class="step">
+  <span class="step-num">STEP 1</span>
+  <p>Zipkin's been running since Lesson 1 — confirm: <code>docker compose ps zipkin</code>, then open <a href="http://localhost:9411" target="_blank">http://localhost:9411</a>.</p>
+</div>
+
+<div class="step">
+  <span class="step-num">STEP 2</span>
+  <p>Fire one more full order through the gateway (same shape as Lessons 8/9 — fresh reference, valid customer/product ids).</p>
+</div>
+
+<div class="step">
+  <span class="step-num">STEP 3</span>
+  <p>Back in Zipkin's UI: click <strong>Run Query</strong> (or search by service name <code>gateway</code>) filtered to the last few minutes. <span class="check">✓</span> Click into the trace for your request — you should see a waterfall/timeline with nested spans: <code>gateway</code> → <code>order-service</code>, then <code>order-service</code> fanning out to <code>customer-service</code>, <code>product-service</code>, and <code>payment-service</code>, each with real timing.</p>
+</div>
+
+<div class="step">
+  <span class="step-num">STEP 4</span>
+  <p>Now the experiment: does <code>notification-service</code> show up as part of the <em>same</em> trace (a child span under the Kafka publish), or does it appear as a separate, disconnected trace when you search for <code>notification-service</code> around the same timestamp? Report back what you actually see — trace context propagating automatically across an async Kafka hop isn't guaranteed by default the way it is for a synchronous HTTP call, and this repo hasn't added any extra config for it.</p>
+</div>
+
+<h2>Check your recall</h2>
+<details>
+  <summary>Why would a real production system almost never set <code>sampling.probability: 1.0</code>?</summary>
+  <p>Cost, at scale — every traced request adds overhead (span creation, network calls to ship them to a collector) multiplied by real production request volume, which is orders of magnitude higher than a few manual demo curls. Most systems sample a small percentage and lean on "always trace requests that error" rules instead of tracing everything.</p>
+</details>
+<details>
+  <summary>What's the practical value of seeing <code>order-service</code>'s span nested under <code>gateway</code>'s in the same trace, versus just reading each service's logs separately?</summary>
+  <p>Logs are per-service and per-line, with no built-in way to know "these 5 log lines across 4 services all belong to the same customer request." A trace answers exactly that — one identifier (the trace id) ties every hop together with real relative timing, which is what actually lets you find the slow or failing hop in a chain like this one without manually correlating timestamps across terminals.</p>
+</details>
+
+<h3>Primary source</h3>
+<p><a href="https://docs.spring.io/spring-boot/reference/actuator/tracing.html" target="_blank">Spring Boot reference — Tracing</a> — covers the sampler, the Zipkin exporter default, and how Micrometer Tracing plugs into Spring MVC/WebClient automatically for the synchronous hops you just saw.</p>
+
+<div class="ask-agent">
+  Curious how you'd actually wire Kafka-side trace propagation so the Notification hop <em>does</em> join the same trace? Ask your agent — real fix exists (Micrometer's Kafka instrumentation), just not enabled in this repo.
+</div>
+
+<div class="nav">
+  <span>&larr; <a href="0009-notification-service.html">Lesson 9 — Notification Service</a></span>
+  <span>Next: Section 17 — Distributed documentation (Swagger via the Gateway) &rarr;</span>
+</div>
+
+</body>
+</html>

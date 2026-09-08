@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Lesson 7 — The API Gateway</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<div class="kicker">Curriculum Sections 11 &amp; 12 · Lesson 7 of the course</div>
+<h1>The API Gateway — and the First Full Order</h1>
+<p class="lede">The front-door piece from the <a href="../reference/big-picture.html">big picture</a>. This closes <em>two</em> loops at once: the mystery port <code>8222</code> from Lesson 3's config, and — for the first time — every piece is finally in place to attempt a real, full order.</p>
+
+<h2>The gateway is pure config — zero routing code</h2>
+<pre><code>@SpringBootApplication
+public class GatewayApplication {
+  public static void main(String[] args) {
+    SpringApplication.run(GatewayApplication.class, args);
+  }
+}</code></pre>
+<p class="source-links">gateway/.../GatewayApplication.java</p>
+<p>No annotation even hints at "gateway" — everything happens in config, because <code>spring-cloud-starter-gateway</code> reads route definitions from properties:</p>
+<pre><code>server:
+  port: 8222
+spring:
+  cloud:
+    gateway:
+      routes:
+        - id: customer-service
+          uri: lb:http://CUSTOMER-SERVICE
+          predicates:
+            - Path=/api/v1/customers/**
+        - id: order-service
+          uri: lb:http://ORDER-SERVICE
+          predicates:
+            - Path=/api/v1/orders/**
+        - id: product-service
+          uri: lb:http://PRODUCT-SERVICE
+          predicates:
+            - Path=/api/v1/products/**
+        - id: payment-service
+          uri: lb:http://PAYMENT-SERVICE
+          predicates:
+            - Path=/api/v1/payments/**</code></pre>
+<p class="source-links">config-server/.../configurations/gateway-service.yml</p>
+
+<div class="callout">
+  <span class="label">Port 8222 — remember this?</span>
+  Order's config (Lesson 3) had <code>customer-url: http://localhost:8222/api/v1/customers</code>. That wasn't a typo or a placeholder — it was always pointing at <em>this</em> service, which didn't exist yet. Order was written to talk to Customer/Product/Payment <strong>only through the gateway</strong>, never directly to their own ports (8090/8050/8060).
+</div>
+
+<h2>Reading a route: <code>lb:http://CUSTOMER-SERVICE</code></h2>
+<p>Break this down:</p>
+<ul>
+  <li><strong><code>Path=/api/v1/customers/**</code></strong> — the predicate: if an incoming request's path matches this, use this route</li>
+  <li><strong><code>lb:</code></strong> — "load-balanced": don't treat the next part as a literal host, resolve it</li>
+  <li><strong><code>http://CUSTOMER-SERVICE</code></strong> — resolve this name against <strong>Eureka</strong> (Lesson 6) to find a real host:port, then forward the request there</li>
+</ul>
+<p>This only works because Eureka is running and Customer registered under exactly that name. Gateway, Eureka, and the config server are now all leaning on each other — this is the point in the course where the infrastructure pieces stop being independent demos and start being a real system.</p>
+
+<h2>Hands-on, part 1: prove the front door works</h2>
+
+<div class="step">
+  <span class="step-num">STEP 1</span>
+  <p>Everything from Lessons 1–6 should still be running: config-server, discovery, customer, order, payment, product. Start the gateway:</p>
+  <pre><code>cd services/gateway
+./mvnw spring-boot:run</code></pre>
+  <p>Runs on port <strong>8222</strong>.</p>
+</div>
+
+<div class="step">
+  <span class="step-num">STEP 2</span>
+  <p>Hit customer-service <em>through</em> the gateway instead of its own port 8090 — same path, different port:</p>
+  <pre><code>curl http://localhost:8222/api/v1/customers</code></pre>
+  <p><span class="check">✓</span> Same response you'd get from <code>localhost:8090</code> directly — but this request actually traveled gateway → Eureka lookup → customer-service. Check the Eureka dashboard (<code>localhost:8761</code>) — <code>GATEWAY</code> should now be registered too (it's also a Eureka client).</p>
+</div>
+
+<h2>Hands-on, part 2: the first real order</h2>
+<p>Every dependency <code>createOrder</code> needs is now technically reachable — <strong>except Kafka</strong>, which is still down (Section 13 hasn't happened yet). Let's try anyway and see exactly where it breaks — this tells us something real about how failures propagate across services.</p>
+
+<div class="step">
+  <span class="step-num">STEP 3</span>
+  <p>Note stock for product 1 right now (should be 8, if you did Lesson 5's purchase exercise):</p>
+  <pre><code>curl http://localhost:8222/api/v1/products/1</code></pre>
+</div>
+
+<div class="step">
+  <span class="step-num">STEP 4</span>
+  <p>Place an order, through the gateway, using a real customer id (create one first if you don't have one — see Lesson 2):</p>
+  <pre><code>curl -i -X POST http://localhost:8222/api/v1/orders \
+  -H "Content-Type: application/json" \
+  -d '{
+    "reference": "order-ref-001",
+    "amount": 199.98,
+    "paymentMethod": "PAYPAL",
+    "customerId": "&lt;your customer id from Lesson 2&gt;",
+    "products": [ { "productId": 1, "quantity": 2 } ]
+  }'</code></pre>
+  <p>Report back what you get — a 200 with an order id, or an error. Given Kafka's state, a failure partway through is expected. Paste me the response (and the order-service console log around it) and we'll trace exactly which call in <code>createOrder</code> failed.</p>
+</div>
+
+<div class="callout">
+  <span class="label">Predict before you look: what's left half-done?</span>
+  Think back to the dual-write problem you reasoned through after Lesson 4. <code>createOrder</code> calls Product (decrement stock), then saves Order+OrderLines locally, then calls Payment (which itself tries to notify over Kafka and may fail). If the Payment call throws, <code>@Transactional</code> rolls back Order's <em>own</em> database — but Product's stock decrement already committed in a <em>different</em> service's database, and it does <strong>not</strong> get undone. Check product 1's stock again after your attempt above — did it drop, even if the order itself failed?
+</div>
+
+<div class="callout">
+  <span class="label">Verified: the real failure, traced end to end</span>
+  A live run confirmed exactly this, plus one sharper detail. The error is <code>feign.FeignException$InternalServerError</code> at <code>PaymentClient#requestOrderPayment</code> — Payment's own <code>createPayment</code> 500'd (Kafka timeout, same as Lesson 4), Feign propagated that as an exception, and it was never caught inside <code>createOrder</code>. Checking all three databases after:
+  <ul>
+    <li><code>customer_order</code> / <code>customer_line</code> — <strong>0 rows.</strong> Rolled back by <code>@Transactional</code>, exactly as predicted.</li>
+    <li><code>product.available_quantity</code> — <strong>dropped, permanently.</strong> Different service, different transaction — not rolled back.</li>
+    <li><code>payment</code> — <strong>rows exist</strong>, and each one's <code>order_id</code> points at an Order id that was allocated in-memory by JPA <em>before</em> the transaction rolled back — a reference to an order that, from Order service's own tables, never existed.</li>
+  </ul>
+  Net effect: stock got reserved and a payment record got created for an order that doesn't exist anywhere in Order's database. No exception, log line, or reconciliation job catches this automatically — you'd only find it by noticing the mismatch, the way we just did with three manual <code>psql</code> queries.
+</div>
+
+<h2>Check your recall</h2>
+<details>
+  <summary>Why does <code>lb:http://CUSTOMER-SERVICE</code> require Eureka specifically, not just any network address?</summary>
+  <p>"CUSTOMER-SERVICE" isn't a hostname — it's the name a service registered under in Eureka. The <code>lb:</code> prefix tells Spring Cloud Gateway to resolve it via the registry (with load balancing across instances) rather than treating it as a literal address.</p>
+</details>
+<details>
+  <summary>If a compensating step existed to "un-decrement" Product's stock when an order ultimately fails, what pattern would that be an example of?</summary>
+  <p>A <strong>saga</strong> — a sequence of local transactions across services, each with a defined compensating action to undo it if a later step fails. This repo doesn't implement one (same simplification category as skipping the outbox pattern) — real systems handling money/inventory across services usually need this exact mechanism.</p>
+</details>
+
+<h3>Primary source</h3>
+<p><a href="https://docs.spring.io/spring-cloud-gateway/reference/spring-cloud-gateway/gateway-request-predicates-factories.html" target="_blank">Spring Cloud Gateway — route predicate factories</a> — see the full list beyond <code>Path</code> (headers, methods, cookies) that can gate a route.</p>
+
+<div class="ask-agent">
+  Paste your actual curl response + order-service log from Step 4 here in chat when you're ready — we'll read the real failure together before moving on.
+</div>
+
+<div class="nav">
+  <span>&larr; <a href="0006-eureka-discovery.html">Lesson 6 — Eureka Discovery</a></span>
+  <span>Next: <a href="0008-async-kafka.html">Section 13 — Asynchronous communication (fixing Kafka, for real)</a> &rarr;</span>
+</div>
+
+</body>
+</html>

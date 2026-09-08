@@ -1,0 +1,3 @@
+# Customer service CRUD loop verified hands-on
+
+Ran customer-service end-to-end: POST/GET/exists, confirmed the saved document in mongo-express, and hit the validation-error path on purpose. Also hit (and understood, after explanation) the harmless Eureka-registration-refused noise, since discovery isn't built yet (Section 10). Evidence: "awesome, done." after working through mongo-express login. The Entity/Repository/DTO/Mapper/Service/Controller shape from Lesson 2 is confirmed understood — future services (Order, Payment, Product) can be taught as "same shape, different fields" rather than re-explaining the layers from scratch.

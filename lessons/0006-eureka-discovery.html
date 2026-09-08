@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Lesson 6 — Service Discovery with Eureka</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<div class="kicker">Curriculum Section 10 · Lesson 6 of the course</div>
+<h1>Service Discovery with Eureka</h1>
+<p class="lede">The phonebook piece from the <a href="../reference/big-picture.html">big picture</a> table. This one closes a loop you've already seen: the "connection refused to localhost:8761" noise from Lesson 2.</p>
+
+<h2>The whole server, again, is one annotation</h2>
+<pre><code>@EnableEurekaServer
+@SpringBootApplication
+public class DiscoveryApplication {
+  public static void main(String[] args) {
+    SpringApplication.run(DiscoveryApplication.class, args);
+  }
+}</code></pre>
+<p class="source-links">discovery/.../DiscoveryApplication.java</p>
+<p>Its own config sets two flags that only make sense once you know what they normally do:</p>
+<pre><code>eureka:
+  instance:
+    hostname: localhost
+  client:
+    registerWithEureka: false   # don't register myself as an entry in the phonebook
+    fetchRegistry: false        # don't ask another Eureka server for a copy of the phonebook
+  server:
+    port: 8761</code></pre>
+<p class="source-links">config-server/.../configurations/discovery-service.yml</p>
+<div class="callout">
+  <span class="label">Why turn those off?</span>
+  A production Eureka setup often runs <em>multiple</em> Eureka servers that are peers of each other — each one is simultaneously the phonebook <em>and</em> a client registering with the others, for redundancy. This repo runs exactly one Eureka server, so it has nothing to register with or fetch from — hence both flags are off.
+</div>
+
+<h2>Nothing to change in Customer, Order, Payment, or Product</h2>
+<p>This is the payoff for the noise you saw back in Lesson 2. Every service already had <code>spring-cloud-starter-netflix-eureka-client</code> on its classpath since Section 4 (Bootstrap), and Spring Cloud auto-registers as a Eureka client purely from that dependency being present — no annotation, no code. They've been retrying a registration call to <code>localhost:8761</code> this whole time and failing. The moment a real Eureka server exists at that address, they'll succeed automatically, with zero code changes.</p>
+
+<h2>Hands-on: watch registration happen live</h2>
+
+<div class="step">
+  <span class="step-num">STEP 1</span>
+  <pre><code>cd services/discovery
+./mvnw spring-boot:run</code></pre>
+  <p>Runs on port <strong>8761</strong>.</p>
+</div>
+
+<div class="step">
+  <span class="step-num">STEP 2</span>
+  <p>Open <a href="http://localhost:8761" target="_blank">http://localhost:8761</a> in a browser — the Eureka dashboard. Under "Instances currently registered with Eureka", it's empty (or close to it) at first.</p>
+</div>
+
+<div class="step">
+  <span class="step-num">STEP 3</span>
+  <p>Make sure customer-service, order-service, payment-service, and product-service are all still running from earlier lessons (restart any you'd stopped: <code>cd services/&lt;name&gt; && ./mvnw spring-boot:run</code>).</p>
+</div>
+
+<div class="step">
+  <span class="step-num">STEP 4</span>
+  <p><span class="check">✓</span> Refresh the dashboard within ~30 seconds (Eureka's default heartbeat interval) — you should see <code>CUSTOMER-SERVICE</code>, <code>ORDER-SERVICE</code>, <code>PAYMENT-SERVICE</code>, <code>PRODUCT-SERVICE</code> appear, each showing the host/port they registered with. Note the names are upper-cased automatically from each service's <code>spring.application.name</code>.</p>
+</div>
+
+<div class="callout">
+  <span class="label">You may see an "EMERGENCY! renewals are lesser than threshold" banner</span>
+  That's Eureka's <strong>self-preservation mode</strong> — it expects a certain rate of renewal heartbeats and gets suspicious when too few instances are registered (common with only 3-4 services in a dev setup). It's a defensive warning, not a failure — safe to ignore here.
+</div>
+
+<h2>Check your recall</h2>
+<details>
+  <summary>Why didn't Customer/Order/Payment/Product need any code or dependency changes to start appearing in Eureka?</summary>
+  <p>They were already Eureka clients since Section 4 — the starter dependency alone triggers auto-registration against Eureka's default address (<code>localhost:8761</code>). They'd been failing silently (or noisily, in the logs) the whole time simply because nothing was listening there yet.</p>
+</details>
+<details>
+  <summary>Recall the <code>PaymentClient</code> bug from Lesson 5 (<code>name = "product-service"</code> but calling <code>payment-url</code>). Now that Eureka is running, is that bug still harmless?</summary>
+  <p>Still harmless <em>for now</em> — <code>PaymentClient</code> still has a hardcoded <code>url</code> attribute, which Feign uses directly and ignores <code>name</code> entirely for routing. The bug only becomes live/dangerous the moment someone removes <code>url</code> so Feign has to resolve the target by looking up <code>"product-service"</code> in the registry you're looking at right now — at which point payment calls would silently route to wherever <code>PRODUCT-SERVICE</code> is registered instead.</p>
+</details>
+
+<h3>Primary source</h3>
+<p><a href="https://docs.spring.io/spring-cloud-netflix/reference/spring-cloud-netflix.html#spring-cloud-eureka-server" target="_blank">Spring Cloud Netflix — Eureka Server reference docs</a> — read "Standalone Mode" to see exactly why <code>registerWithEureka</code>/<code>fetchRegistry</code> default to <code>true</code> in a normal (peer-aware) setup.</p>
+
+<div class="ask-agent">
+  Want to kill one of the services and watch it disappear from the dashboard after its lease expires? Good way to see Eureka's other half (deregistration) in action — ask your agent if you want a walkthrough.
+</div>
+
+<div class="nav">
+  <span>&larr; <a href="0005-http-communication.html">Lesson 5 — HTTP Communication</a></span>
+  <span>Next: <a href="0007-api-gateway.html">Section 11 — API Gateway</a> &rarr;</span>
+</div>
+
+</body>
+</html>

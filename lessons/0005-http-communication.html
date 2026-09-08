@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Lesson 5 — HTTP Communication: RestTemplate vs OpenFeign</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<div class="kicker">Curriculum Section 9 · Lesson 5 of the course</div>
+<h1>Microservices Communication via HTTP</h1>
+<p class="lede">Order service needs answers from Customer, Payment, and Product <em>right now</em>, synchronously — this is the "picking up the phone" style of communication from the <a href="../reference/big-picture.html">big picture</a>. This repo shows two different Java ways to do it, side by side, in the same class.</p>
+
+<h2>New service introduced here: Product</h2>
+<p>Not in <code>curriculum.txt</code> explicitly, but required for Order to work — it's the thing Order "purchases" from. Same six-layer shape as Customer/Order/Payment (Entity/Repository/DTOs/Mapper/Service/Controller), Postgres-backed, so we won't re-tour it. One difference worth noting:</p>
+<div class="callout">
+  <span class="label">Product uses Flyway, not ddl-auto: create</span>
+  <code>product-service.yml</code> sets <code>ddl-auto: validate</code> (schema must already match, never auto-created) plus Flyway migrations under <code>db/migration/</code> — <code>V1__init_database.sql</code> creates the schema, <code>V2__insert_data.sql</code> seeds 25 real products. This is the production-realistic pattern Order/Payment skip for simplicity (recall Lesson 3's callout on why <code>ddl-auto: create</code> isn't safe for real use) — Product actually shows the fix.
+</div>
+
+<h2>Two ways to call another service</h2>
+<table>
+  <tr><th></th><th>OpenFeign</th><th>RestTemplate</th></tr>
+  <tr><td>Style</td><td>Declarative — write an interface, Spring implements it</td><td>Imperative — you build the request and call it yourself</td></tr>
+  <tr><td>In this repo</td><td><code>CustomerClient</code>, <code>PaymentClient</code></td><td><code>ProductClient</code></td></tr>
+  <tr><td>Feels like</td><td>Calling a local method</td><td>Writing HTTP client code</td></tr>
+  <tr><td>Verbosity</td><td>Minimal</td><td>More boilerplate, more control</td></tr>
+</table>
+
+<h3>OpenFeign: just an interface</h3>
+<pre><code>@FeignClient(name = "customer-service", url = "${application.config.customer-url}")
+public interface CustomerClient {
+  @GetMapping("/{customer-id}")
+  Optional&lt;CustomerResponse&gt; findCustomerById(@PathVariable("customer-id") String customerId);
+}</code></pre>
+<p>No implementation body, anywhere. Spring Cloud OpenFeign generates a proxy at startup that turns a call to <code>customerClient.findCustomerById("abc")</code> into an actual <code>GET</code> request. <code>OrderService</code> (Lesson 3) just calls it like a normal method.</p>
+<p class="source-links">order/.../customer/CustomerClient.java</p>
+
+<h3>RestTemplate: you write every step</h3>
+<pre><code>public List&lt;PurchaseResponse&gt; purchaseProducts(List&lt;PurchaseRequest&gt; requestBody) {
+  HttpHeaders headers = new HttpHeaders();
+  headers.set(CONTENT_TYPE, APPLICATION_JSON_VALUE);
+  HttpEntity&lt;List&lt;PurchaseRequest&gt;&gt; requestEntity = new HttpEntity&lt;&gt;(requestBody, headers);
+  ParameterizedTypeReference&lt;List&lt;PurchaseResponse&gt;&gt; responseType = new ParameterizedTypeReference&lt;&gt;() {};
+
+  ResponseEntity&lt;List&lt;PurchaseResponse&gt;&gt; responseEntity = restTemplate.exchange(
+      productUrl + "/purchase", POST, requestEntity, responseType);
+
+  if (responseEntity.getStatusCode().isError()) {
+      throw new BusinessException("...");
+  }
+  return responseEntity.getBody();
+}</code></pre>
+<p>Same end result as Feign — an HTTP call, a typed response — but every piece (headers, entity, the generic type for a <code>List&lt;PurchaseResponse&gt;</code> response, error checking) is explicit. The <code>ParameterizedTypeReference</code> dance exists because Java erases generic types at runtime — <code>RestTemplate</code> needs to be told exactly what shape to deserialize into.</p>
+<p class="source-links">order/.../product/ProductClient.java · config/RestTemplateConfig.java</p>
+
+<div class="callout">
+  <span class="label">Why this repo shows both instead of picking one</span>
+  It's a deliberate teaching choice (the curriculum literally has "RestTemplate vs OpenFeign" as a heading). In real projects you'd normally standardize on one — Feign is more common today for exactly the reason you can see above: less code, same result, and it composes with Eureka name-based routing (next lesson) automatically.
+</div>
+
+<h2>Check your recall (spot the bug — same game as Lesson 3)</h2>
+<pre><code>@FeignClient(
+    name = "product-service",     // <-- look closely
+    url = "${application.config.payment-url}"
+)
+public interface PaymentClient {
+  @PostMapping
+  Integer requestOrderPayment(@RequestBody PaymentRequest request);
+}</code></pre>
+<details>
+  <summary>What's wrong with <code>PaymentClient</code>'s <code>@FeignClient</code> annotation, and does it actually break anything right now?</summary>
+  <p>The <code>name</code> says <code>"product-service"</code> but this is clearly the <em>payment</em> client (calling <code>payment-url</code>) — looks like a copy-paste from <code>ProductClient</code>/a neighboring class. It doesn't break anything <strong>yet</strong> because a hardcoded <code>url</code> is supplied, which takes priority — Feign dispatches straight to that URL and ignores <code>name</code> entirely for routing. <code>name</code> only becomes load-bearing once <code>url</code> is removed and Feign has to resolve the target via Eureka by service name instead — which is exactly Section 10, next. If that migration happens without fixing this typo, requests to Payment would suddenly start resolving against wherever "product-service" is registered — a real bug waiting to activate.</p>
+</details>
+
+<h2>Hands-on: exercise Product service standalone</h2>
+<p>We still can't run Order's full <code>createOrder</code> (needs Eureka + Gateway first — next two lessons). But we can prove Product service itself, and see the RestTemplate-called endpoint work directly.</p>
+
+<div class="step">
+  <span class="step-num">STEP 1</span>
+  <p>The <code>product</code> Postgres database is already created. Start the service:</p>
+  <pre><code>cd services/product
+./mvnw spring-boot:run</code></pre>
+  <p>Runs on port <strong>8050</strong>. Watch the log for Flyway: <code>Migrating schema "public" to version "1"</code> then <code>"2"</code> — that's the seed data loading.</p>
+</div>
+
+<div class="step">
+  <span class="step-num">STEP 2</span>
+  <p>List the seeded products:</p>
+  <pre><code>curl http://localhost:8050/api/v1/products</code></pre>
+  <p><span class="check">✓</span> 25 products across 5 categories. Note product id <code>1</code> — "Mechanical Keyboard 1", quantity 10.</p>
+</div>
+
+<div class="step">
+  <span class="step-num">STEP 3</span>
+  <p>Call the exact endpoint <code>ProductClient.purchaseProducts</code> calls, directly — buy 2 of product 1:</p>
+  <pre><code>curl -X POST http://localhost:8050/api/v1/products/purchase \
+  -H "Content-Type: application/json" \
+  -d '[{ "productId": 1, "quantity": 2 }]'</code></pre>
+  <p>Then check the stock actually decremented:</p>
+  <pre><code>curl http://localhost:8050/api/v1/products/1</code></pre>
+  <p><span class="check">✓</span> <code>availableQuantity</code> should now read 8. This is exactly what happens inside <code>createOrder</code> — just called directly instead of through Order.</p>
+</div>
+
+<div class="step">
+  <span class="step-num">STEP 4</span>
+  <p>Try to over-buy and trigger the business-rule exception on purpose:</p>
+  <pre><code>curl -i -X POST http://localhost:8050/api/v1/products/purchase \
+  -H "Content-Type: application/json" \
+  -d '[{ "productId": 1, "quantity": 9999 }]'</code></pre>
+  <p>Expect a 4xx from <code>ProductPurchaseException</code> ("Insufficient stock quantity...") — and quantity should be unchanged after, since the whole method is <code>@Transactional</code>.</p>
+</div>
+
+<h3>Primary source</h3>
+<p><a href="https://docs.spring.io/spring-cloud-openfeign/reference/spring-cloud-openfeign.html" target="_blank">Spring Cloud OpenFeign reference docs</a> — read "Creating Feign Clients Manually" to see what the <code>@FeignClient</code> proxy is actually doing under the hood.</p>
+
+<div class="ask-agent">
+  Want to see the generated Flyway schema (<code>V1__init_database.sql</code>) to compare against Order/Payment's auto-created tables? Ask your agent.
+</div>
+
+<div class="nav">
+  <span>&larr; <a href="0004-payment-service.html">Lesson 4 — Payment Service</a></span>
+  <span>Next: <a href="0006-eureka-discovery.html">Section 10 — Service Discovery with Eureka</a> &rarr;</span>
+</div>
+
+</body>
+</html>

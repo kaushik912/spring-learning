@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Reference — The Big Picture</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<div class="kicker">Reference · read anytime, revisit often</div>
+<h1>The Big Picture</h1>
+<p class="lede">Why each infrastructure piece in this repo exists — the problem it solves, in one line each. Link back here from any module lesson instead of re-explaining.</p>
+
+<h2>The core idea</h2>
+<p>Instead of one app, this project is <strong>8 small apps</strong>, each owning one job (customers, orders, payments, products, notifications), talking to each other over the network. That split is the whole point of "microservices" — but it creates new problems a single app never had. Every extra piece below exists to solve exactly one of those new problems.</p>
+
+<h2>The pieces, mapped to problems</h2>
+<table>
+  <tr><th>Problem, once split into 8 apps</th><th>The fix</th><th>Plain-English job</th></tr>
+  <tr>
+    <td>Each app needs settings (DB passwords, ports) — editing 8 copies is a pain</td>
+    <td><strong>Config Server</strong></td>
+    <td>One shared settings binder every service reads from on startup</td>
+  </tr>
+  <tr>
+    <td>Each app's network address can change (restart, scaled up, moved)</td>
+    <td><strong>Eureka Discovery</strong></td>
+    <td>A phonebook — apps register themselves by name, others look them up by name instead of a hardcoded address</td>
+  </tr>
+  <tr>
+    <td>An outside caller shouldn't need to know which of 8 services to hit</td>
+    <td><strong>API Gateway</strong></td>
+    <td>One front door — a single public address that routes internally</td>
+  </tr>
+  <tr>
+    <td>One service needs an immediate answer from another ("does this customer exist?")</td>
+    <td><strong>Sync HTTP calls</strong> (RestTemplate / OpenFeign)</td>
+    <td>Picking up the phone and calling another service directly, live, waiting for the reply</td>
+  </tr>
+  <tr>
+    <td>One service shouldn't have to wait for a slow, non-essential step (sending an email) before finishing its own job</td>
+    <td><strong>Kafka</strong> (async messaging)</td>
+    <td>A notice board — a service pins an event and moves on; whoever cares reads it whenever they're ready. Neither side needs to know the other exists</td>
+  </tr>
+  <tr>
+    <td>A request crosses several services and something's slow or broken — which one?</td>
+    <td><strong>Zipkin</strong> (distributed tracing)</td>
+    <td>A tracking slip stamped at every service a request passed through, with timing</td>
+  </tr>
+</table>
+
+<h2>Curriculum order (why this order)</h2>
+<p>The course builds the departments first, then wires them together, in this order:</p>
+<ol>
+  <li><strong>Sections 5–8</strong> — build each service standalone (Config, Customer, Order, Payment), no cross-talk yet</li>
+  <li><strong>Section 9</strong> — teach services to call each other directly (sync HTTP)</li>
+  <li><strong>Section 10</strong> — give them a phonebook so they don't hardcode each other's addresses (Eureka)</li>
+  <li><strong>Section 11</strong> — put one front door in front of all of them (Gateway)</li>
+  <li><strong>Section 13</strong> — swap some direct calls for notice-board-style async messaging (Kafka), so services stop blocking on non-essential work</li>
+  <li><strong>Section 15</strong> — Notification service actually reads the notice board and sends real emails</li>
+  <li><strong>Section 16</strong> — add tracing so a request across many services is debuggable</li>
+</ol>
+
+<div class="callout">
+  <span class="label">Where we are (this workspace)</span>
+  Lessons 1–3 covered Config Server, Customer service, and Order service — all standalone, nothing wired together yet. Order's code already <em>contains</em> the later wiring (it's the finished repo, all sections merged) but can't run end-to-end until Payment, Product, Eureka, Gateway, and Kafka are all up.
+</div>
+
+<div class="nav">
+  <span>&larr; Back to <a href="../lessons/0003-order-service.html">Lesson 3</a></span>
+</div>
+
+</body>
+</html>

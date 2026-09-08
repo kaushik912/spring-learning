@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Lesson 3 — The Order Service</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<div class="kicker">Curriculum Section 7 · Lesson 3 of the course</div>
+<h1>The Order Service</h1>
+<p class="lede">Same six-layer shape as Customer — but relational (Postgres/JPA) instead of document (Mongo), with a real one-to-many relationship, and a first look at a service that reaches out to <em>other</em> services.</p>
+
+<h2>What's different from Customer service</h2>
+<table>
+  <tr><th></th><th>Customer service</th><th>Order service</th></tr>
+  <tr><td>Database</td><td>MongoDB (document)</td><td>Postgres (relational)</td></tr>
+  <tr><td>Persistence API</td><td><code>MongoRepository</code></td><td><code>JpaRepository</code></td></tr>
+  <tr><td>Entity annotation</td><td><code>@Document</code></td><td><code>@Entity</code> + <code>@Table</code></td></tr>
+  <tr><td>Id type</td><td><code>String</code> (Mongo ObjectId)</td><td><code>Integer</code> (DB auto-increment)</td></tr>
+  <tr><td>Relationships</td><td>none — <code>Address</code> is embedded</td><td><code>Order</code> ↔ <code>OrderLine</code>, a real <code>@OneToMany</code></td></tr>
+</table>
+
+<h2>Entity: a real relationship this time</h2>
+<p><code>Order</code> owns a list of <code>OrderLine</code> (one order, many line items — one per product purchased). It also auto-tracks created/modified timestamps via Spring Data's auditing listener:</p>
+<pre><code>@Entity
+@EntityListeners(AuditingEntityListener.class)
+@Table(name = "customer_order")
+public class Order {
+  @Id @GeneratedValue
+  private Integer id;
+  private String reference;
+  private BigDecimal totalAmount;
+  @Enumerated(EnumType.STRING)
+  private PaymentMethod paymentMethod;
+  private String customerId;            // <- just an ID, not a joined Customer object
+  @OneToMany(mappedBy = "order")
+  private List&lt;OrderLine&gt; orderLines;
+  @CreatedDate private LocalDateTime createdDate;
+  @LastModifiedDate private LocalDateTime lastModifiedDate;
+}</code></pre>
+<p class="source-links">order/.../order/Order.java · orderline/OrderLine.java</p>
+
+<div class="callout">
+  <span class="label">Notice: customerId is a bare String, not a foreign key</span>
+  This is the microservices rule: <strong>Order's database has no idea Customer's database exists.</strong> They're different services with different databases (Postgres vs Mongo) — there's no SQL join possible across them even if you wanted one. Order just stores the customer's id and, when it needs real customer data, asks the customer <em>service</em> over HTTP. That's the next section.
+</div>
+
+<div class="callout">
+  <span class="label">Notice: ddl-auto: create</span>
+  Order's config sets <code>spring.jpa.hibernate.ddl-auto: create</code> — Hibernate drops and rebuilds the whole schema every time the service restarts. Great for a teaching repo where you want a clean slate each run; would lose all data in production (you'd use <code>validate</code> or a migration tool like Flyway there instead).
+</div>
+
+<h2>Controller: fewer endpoints than Customer</h2>
+<p>Only three — no update, no delete. Orders in this model are created once and read, not edited freehand:</p>
+<table>
+  <tr><th>Method</th><th>Path</th></tr>
+  <tr><td>POST</td><td><code>/api/v1/orders</code></td></tr>
+  <tr><td>GET</td><td><code>/api/v1/orders</code></td></tr>
+  <tr><td>GET</td><td><code>/api/v1/orders/{id}</code></td></tr>
+</table>
+<p class="source-links">order/.../order/OrderController.java</p>
+
+<h2>A preview: <code>createOrder</code> already reaches beyond this service</h2>
+<p>Open <code>OrderService.java</code> and <code>createOrder</code> does a lot: it calls a <code>CustomerClient</code>, a <code>ProductClient</code>, a <code>PaymentClient</code>, saves the order, saves order lines, calls the payment client again, then publishes a Kafka event. That's because this repo is the <strong>finished</strong> product — every later curriculum section's code is already sitting in the same file.</p>
+<div class="callout">
+  <span class="label">Why we can't run createOrder yet</span>
+  It needs, all at once: a running <strong>customer-service</strong> (have it ✓), a running <strong>product-service</strong> and <strong>payment-service</strong> (Section 8, not yet), a running <strong>Kafka</strong> (Section 13, not yet), and — look closely at Order's config — <code>customer-url: http://localhost:8222/...</code>. Port <strong>8222</strong> isn't customer-service's own port (8090) — it's the <strong>gateway's</strong> port (Section 11). So <code>createOrder</code> can't even reach Customer yet, because the gateway doesn't exist yet either.
+  <br><br>
+  We'll come back to this exact method once Payment, Product, and the Gateway are built — piece by piece, the same way the course does.
+</div>
+
+<h2>Check your recall (spot the bug)</h2>
+<p>Compare <code>OrderMapper.toOrder</code> against <code>OrderRequest</code> and <code>Order</code>:</p>
+<pre><code>public Order toOrder(OrderRequest request) {
+  return Order.builder()
+      .id(request.id())
+      .reference(request.reference())
+      .paymentMethod(request.paymentMethod())
+      .customerId(request.customerId())
+      .build();
+}</code></pre>
+<details>
+  <summary>One field from <code>OrderRequest</code> never makes it onto the saved <code>Order</code>. Which one, and what would you observe because of it?</summary>
+  <p><code>request.amount()</code> is never copied to <code>order.totalAmount</code> — the builder never calls <code>.totalAmount(...)</code>. Every order saved this way will have <code>totalAmount = null</code> in the database, and <code>GET /api/v1/orders/{id}</code> will always report <code>"amount": null</code> back to the client, regardless of what amount was sent in on create. A real, un-caught bug in the reference repo — the kind of thing reading code carefully (rather than trusting it works because it compiles) catches.</p>
+</details>
+
+<h2>Hands-on: boot it and prove the plumbing (not the full flow yet)</h2>
+
+<div class="step">
+  <span class="step-num">STEP 1</span>
+  <p>Confirm <code>ms_pg_sql</code> (Postgres) is up: <code>docker compose ps</code>. Config server should still be running from Lesson 1.</p>
+</div>
+
+<div class="step">
+  <span class="step-num">STEP 2</span>
+  <pre><code>cd services/order
+./mvnw spring-boot:run</code></pre>
+  <p>Watch the log for Hibernate's <code>create table customer_order</code> / <code>create table customer_line</code> — that's <code>ddl-auto: create</code> firing.</p>
+</div>
+
+<div class="step">
+  <span class="step-num">STEP 3</span>
+  <p>Confirm the tables exist via pgAdmin (<code>http://localhost:5050</code>) — or just prove the service is live:</p>
+  <pre><code>curl http://localhost:8070/api/v1/orders</code></pre>
+  <p><span class="check">✓</span> Expect <code>[]</code> — an empty array, 200 OK. That's JPA + Postgres wired correctly end to end, with nothing in the table yet.</p>
+</div>
+
+<div class="step">
+  <span class="step-num">STEP 4</span>
+  <p>Check the 404 path:</p>
+  <pre><code>curl -i http://localhost:8070/api/v1/orders/999</code></pre>
+  <p>Expect <code>404</code> with the message from <code>EntityNotFoundException</code>, handled by <code>GlobalExceptionHandler</code> — same pattern as Customer's <code>CustomerNotFoundException</code>, different exception type (JPA's built-in one vs. a hand-rolled one).</p>
+</div>
+
+<div class="callout">
+  <span class="label">Don't try POST yet</span>
+  <code>POST /api/v1/orders</code> will fail right now (it needs customer/product/payment/Kafka, all not running). We'll do this for real in a later lesson once those pieces exist.
+</div>
+
+<h3>Primary source</h3>
+<p><a href="https://docs.spring.io/spring-data/jpa/reference/jpa/entity-persistence.html" target="_blank">Spring Data JPA — entity persistence</a> — how <code>JpaRepository</code> generates SQL from an entity, and what <code>ddl-auto</code> actually controls.</p>
+
+<div class="ask-agent">
+  Curious what the actual generated SQL looks like, or want to poke around the Postgres tables directly with <code>psql</code> instead of pgAdmin? Ask your agent.
+</div>
+
+<div class="nav">
+  <span>&larr; <a href="0002-customer-service.html">Lesson 2 — Customer Service</a></span>
+  <span>Next: <a href="0004-payment-service.html">Section 8 — Payment service</a> &rarr;</span>
+</div>
+
+</body>
+</html>
