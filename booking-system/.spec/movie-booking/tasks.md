@@ -15,8 +15,8 @@ status: approved
 - [x] Implement Booking entity + booking service (conditional `UPDATE ... WHERE status='AVAILABLE'` per seat, single `@Transactional` method) + controller to pass it
 - [x] Write failing test: booking a set that includes an already-booked seat returns 409 and books nothing — read-back shows the other requested seats still `AVAILABLE`
 - [x] Implement rollback/error-mapping (`@ControllerAdvice`) to pass it
-- [ ] Write failing test: two concurrent `POST` bookings for the same seat (two threads, `CountDownLatch`-synchronized start) resolve to exactly one 201 and one 409; read-back shows exactly one booking owns the seat
-- [ ] Verify it passes against the existing conditional-UPDATE implementation (add locking/isolation fixes only if the test reveals a gap)
+- [x] Write failing test: two concurrent `POST` bookings for the same seat (two threads, `CountDownLatch`-synchronized start) resolve to exactly one 201 and one 409; read-back shows exactly one booking owns the seat
+- [x] Verify it passes against the existing conditional-UPDATE implementation (add locking/isolation fixes only if the test reveals a gap) — passed as-is; only had to expose `bookingId` on SeatResponse for the read-back assertion
 - [ ] Add Flyway seed migration (`V2__seed_demo_data.sql`) with sample movies/showtimes/seats for manual/local exploration
 - [ ] Wire `springdoc-openapi-starter-webmvc-ui` (2.8.6) dependency + `@Tag`/`@Operation` annotations on controllers
 - [ ] Write failing test: `/swagger-ui.html` and `/v3/api-docs` return 200/3xx
