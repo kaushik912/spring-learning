@@ -21,4 +21,4 @@ status: approved
 - [x] Wire `springdoc-openapi-starter-webmvc-ui` dependency + `@Tag`/`@Operation` annotations on controllers — used 3.1.1 (targets Boot 4), not plan.md's 2.8.6 (targets Boot 3, same EOL situation as the Boot version itself)
 - [x] Write failing test: `/swagger-ui.html` and `/v3/api-docs` return 200/3xx
 - [x] Verify it passes — passed immediately, springdoc's autoconfig wires both endpoints with no extra code
-- [ ] Write `Makefile` with a `test` target running `./mvnw test` (Testcontainers starts Postgres automatically — no separate DB setup required)
+- [x] Write `Makefile` with a `test` target running `./mvnw test` (Testcontainers starts Postgres automatically — no separate DB setup required)
