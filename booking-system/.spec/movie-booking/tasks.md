@@ -5,8 +5,8 @@ status: approved
 
 - [x] Scaffold Spring Boot project via `spring init` (Maven, Java): web, data-jpa, postgresql, flyway, testcontainers, validation — used 4.0.8, since Boot 3.x is gone from start.spring.io (EOL); confirmed with user
 - [x] Add Testcontainers-Postgres test base config (`@ServiceConnection`) and Flyway `V1__init_schema.sql` (movie, showtime, seat, booking tables — FKs, `NOT NULL`, `UNIQUE(showtime_id, seat_label)` on seat)
-- [ ] Write failing test: `GET /movies` returns all movies (read-back after inserting fixtures via repository)
-- [ ] Implement Movie entity/repository/service/controller to pass it
+- [x] Write failing test: `GET /movies` returns all movies (read-back after inserting fixtures via repository)
+- [x] Implement Movie entity/repository/service/controller to pass it
 - [ ] Write failing test: `GET /movies/{id}/showtimes` returns only that movie's showtimes
 - [ ] Implement Showtime entity/repository/service/controller to pass it
 - [ ] Write failing test: `GET /showtimes/{id}` returns the seat map with each seat's id/label/status
