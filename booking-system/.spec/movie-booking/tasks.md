@@ -7,8 +7,8 @@ status: approved
 - [x] Add Testcontainers-Postgres test base config (`@ServiceConnection`) and Flyway `V1__init_schema.sql` (movie, showtime, seat, booking tables — FKs, `NOT NULL`, `UNIQUE(showtime_id, seat_label)` on seat)
 - [x] Write failing test: `GET /movies` returns all movies (read-back after inserting fixtures via repository)
 - [x] Implement Movie entity/repository/service/controller to pass it
-- [ ] Write failing test: `GET /movies/{id}/showtimes` returns only that movie's showtimes
-- [ ] Implement Showtime entity/repository/service/controller to pass it
+- [x] Write failing test: `GET /movies/{id}/showtimes` returns only that movie's showtimes
+- [x] Implement Showtime entity/repository/service/controller to pass it
 - [ ] Write failing test: `GET /showtimes/{id}` returns the seat map with each seat's id/label/status
 - [ ] Implement Seat entity/repository and showtime-detail endpoint to pass it
 - [ ] Write failing test: `POST /showtimes/{id}/bookings` with available seats returns 201 with the booking + seats, and a follow-up `GET /showtimes/{id}` read-back shows those seats `BOOKED`
