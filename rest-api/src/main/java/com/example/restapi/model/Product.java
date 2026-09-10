@@ -6,7 +6,7 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Negative;
+import jakarta.validation.constraints.Positive;
 import java.math.BigDecimal;
 
 @Entity
@@ -22,7 +22,7 @@ public class Product {
     private String description;
 
     @NotNull(message = "price is required")
-    @Negative(message = "price must be greater than 0")
+    @Positive(message = "price must be greater than 0")
     private BigDecimal price;
 
     public Product() {}
