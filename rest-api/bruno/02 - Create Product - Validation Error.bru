@@ -1,0 +1,33 @@
+meta {
+  name: 02 - Create Product - Validation Error
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/products
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "name": "",
+    "description": "Missing name and invalid price",
+    "price": -5
+  }
+}
+
+tests {
+  test("status is 400 Bad Request", function () {
+    expect(res.getStatus()).to.equal(400);
+  });
+
+  test("error body reports both field violations", function () {
+    const body = res.getBody();
+    expect(body.status).to.equal(400);
+    expect(body.error).to.equal("Bad Request");
+    expect(body.message).to.include("name");
+    expect(body.message).to.include("price");
+  });
+}
