@@ -1,0 +1,32 @@
+meta {
+  name: 01 - Create Product - Success
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/products
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "name": "Laptop",
+    "description": "Gaming laptop",
+    "price": 1299.99
+  }
+}
+
+tests {
+  test("status is 201 Created", function () {
+    expect(res.getStatus()).to.equal(201);
+  });
+
+  test("response body echoes the created product with a generated id", function () {
+    const body = res.getBody();
+    expect(body.id).to.be.a("number");
+    expect(body.name).to.equal("Laptop");
+    expect(body.price).to.equal(1299.99);
+  });
+}
