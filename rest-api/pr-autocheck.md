@@ -1,0 +1,1 @@
+/loop 15m Check PR #<PR_NUMBER> using `gh pr view`. If status checks are RED, run `gh run view --log-failed` to fetch the error logs, fix the root cause in the Maven code, run `mvn clean test` locally to verify, and `git push`. If GREEN, do nothing.
