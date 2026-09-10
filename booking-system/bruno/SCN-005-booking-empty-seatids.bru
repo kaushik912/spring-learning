@@ -1,0 +1,34 @@
+meta {
+  name: SCN-005 - Book Showtime - Empty SeatIds Array
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{baseUrl}}/showtimes/6/bookings
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "seatIds": []
+  }
+}
+
+tests {
+  test("status is 400 Bad Request", function () {
+    expect(res.getStatus()).to.equal(400);
+  });
+}
+
+docs {
+  Scenario ID: SCN-005
+  Scenario: tries to book seats but sends an empty list of seats (asks to book nothing).
+  Expected: the server should reject this as a bad request (400) since a booking needs at least one seat.
+  Currently fails: the server accepts this today and creates a booking with zero seats attached — a pointless record that reserved nothing. This test is written to assert the CORRECT behavior on purpose, so it will fail until that validation is added — this is intentional, to document and track the bug (fix tracked separately, not part of this test).
+}

@@ -1,0 +1,29 @@
+meta {
+  name: SCN-002 - List Showtimes For Movie - Movie Missing
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/movies/999999/showtimes
+  body: none
+  auth: none
+}
+
+tests {
+  test("status is 200 OK", function () {
+    expect(res.getStatus()).to.equal(200);
+  });
+
+  test("response is an empty list", function () {
+    const body = res.getBody();
+    expect(body).to.be.an("array");
+    expect(body.length).to.equal(0);
+  });
+}
+
+docs {
+  Scenario ID: SCN-002
+  Scenario: asks for the list of showtimes belonging to a movie id that doesn't exist.
+  Expected: the server currently just returns an empty list with a normal success status, the same answer it would give for a real movie that simply has no showtimes yet. This test locks in that documented behavior; it is not currently flagged as a bug, just an ambiguity worth knowing about.
+}

@@ -1,0 +1,2 @@
+- [Write failing tests for real bugs](feedback_bug_documenting_tests.md) — assert correct behavior, let it fail, don't soften; track fix separately
+- [booking-system bug candidates](project_booking_system_context.md) — SCN-004/005/006 in booking-system are known bugs (missing seatIds validation, no showtime-existence check), deferred to a Jira ticket

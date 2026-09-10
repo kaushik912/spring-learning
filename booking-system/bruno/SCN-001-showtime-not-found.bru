@@ -1,0 +1,23 @@
+meta {
+  name: SCN-001 - Get Showtime - Not Found
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/showtimes/999999
+  body: none
+  auth: none
+}
+
+tests {
+  test("status is 404 Not Found", function () {
+    expect(res.getStatus()).to.equal(404);
+  });
+}
+
+docs {
+  Scenario ID: SCN-001
+  Scenario: asks for a showtime with an id that doesn't exist.
+  Expected: the server says "not found" (404), instead of returning any showtime data or crashing.
+}

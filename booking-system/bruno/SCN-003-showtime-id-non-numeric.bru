@@ -1,0 +1,23 @@
+meta {
+  name: SCN-003 - Get Showtime - Non-Numeric Id
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/showtimes/abc
+  body: none
+  auth: none
+}
+
+tests {
+  test("status is 400 Bad Request", function () {
+    expect(res.getStatus()).to.equal(400);
+  });
+}
+
+docs {
+  Scenario ID: SCN-003
+  Scenario: asks for a showtime using an id that isn't a number at all (the letters "abc" instead of a numeric id).
+  Expected: the server rejects this cleanly as a bad request (400), rather than crashing with an unhandled error.
+}

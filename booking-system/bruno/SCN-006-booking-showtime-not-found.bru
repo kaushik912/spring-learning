@@ -1,0 +1,34 @@
+meta {
+  name: SCN-006 - Book Showtime - Showtime Not Found
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{baseUrl}}/showtimes/999999/bookings
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "seatIds": [1]
+  }
+}
+
+tests {
+  test("status is 404 Not Found", function () {
+    expect(res.getStatus()).to.equal(404);
+  });
+}
+
+docs {
+  Scenario ID: SCN-006
+  Scenario: tries to book a seat on a showtime id that doesn't exist at all.
+  Expected: the server should say "showtime not found" (404), matching what happens when you look up that same missing showtime directly.
+  Currently fails: the server doesn't check whether the showtime exists before trying to book seats, so it comes back with a "seat unavailable" conflict (409) instead — the same response it would give for a real double-booking, even though the actual problem is a bad showtime id. This test is written to assert the CORRECT behavior on purpose, so it will fail until that check is added — this is intentional, to document and track the bug (fix tracked separately, not part of this test).
+}
