@@ -1,5 +1,6 @@
 package com.example.restapi.service;
 
+import com.example.restapi.exception.ProductNotFoundException;
 import com.example.restapi.model.Product;
 import com.example.restapi.repository.ProductRepository;
 import org.slf4j.Logger;
@@ -36,11 +37,14 @@ public class ProductService {
     public Product getById(Long id) {
         log.info("Fetching product {} from DB...", id);
         return repository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Product not found: " + id));
+                .orElseThrow(() -> new ProductNotFoundException(id));
     }
 
     @CacheEvict(value = "products", allEntries = true)
     public void delete(Long id) {
+        if (!repository.existsById(id)) {
+            throw new ProductNotFoundException(id);
+        }
         repository.deleteById(id);
     }
 }
