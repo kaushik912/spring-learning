@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "codebase-memory-mcp": {
+      "command": "/home/kaush/.local/bin/codebase-memory-mcp",
+      "args": [],
+      "env": { "CBM_ALLOWED_ROOT": "/home/kaush/github_projs/spring-learning" }
+    }
+  }
+}
