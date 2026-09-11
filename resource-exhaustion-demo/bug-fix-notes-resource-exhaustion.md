@@ -176,6 +176,82 @@ Concrete examples of each, beyond the two reproduced here:
   while you do it) — check both metrics before assuming which one you're
   chasing.
 
+## Diagnosing it locally with JFR
+
+You don't need to already know which bug you're looking at — attach JFR to
+the running app the same way you'd attach it to a pod in production, then
+let the recording tell you.
+
+### 1. Attach to the running app
+
+```bash
+./mvnw spring-boot:run &
+jps -l                                    # find the PID (or: jcmd -l)
+
+jcmd <pid> JFR.start name=demo duration=300s filename=/tmp/resource-exhaustion.jfr settings=profile
+```
+
+`settings=profile` matters — it enables both **method sampling** (for the
+CPU bug) and **allocation sampling** (for the memory bug). The default
+`settings=default` profile samples less aggressively and can miss the
+signal in a short recording.
+
+### 2. Generate load against each buggy endpoint while it's recording
+
+```bash
+# CPU bug — hammer the O(n^2) path
+for i in $(seq 1 30); do curl -s "http://localhost:8080/api/buggy/orders/duplicates?count=8000" > /dev/null; done
+
+# Memory bug — push enough rows to create a visible allocation spike
+curl -s "http://localhost:8080/api/buggy/report?rows=200000" > /dev/null
+```
+
+### 3. Stop and pull the recording
+
+```bash
+jcmd <pid> JFR.dump name=demo filename=/tmp/resource-exhaustion.jfr
+jcmd <pid> JFR.stop name=demo
+```
+
+### 4. Read it — GUI (JDK Mission Control)
+
+JMC won't launch headless under plain WSL2 — either run an X server, or
+copy the `.jfr` to the Windows side and open it with JMC installed there.
+
+| Bug | Where to look | What you'll see |
+|---|---|---|
+| CPU (`SlowDuplicateFinder`) | **Method Profiling → Hot Methods** | `SlowDuplicateFinder.findDuplicates` dominates the sample count; `FastDuplicateFinder` barely registers for the same request volume |
+| Memory (`MemoryHogService`) | **Memory → Allocation by Class**, then drill into the stack trace | `byte[]` is the top allocator, and the call stack traces straight back to `MemoryHogService.buildReport` |
+| Memory (confirm it's *retained*, not just allocated) | **Memory → Live Set over time** | steadily climbing during the buggy call, flat during the streaming/fixed call — allocation without retention (like `StreamingReportService`) won't show this climb |
+| Either bug's cost | **GC tab** | pause count/duration spikes in the same window as the buggy call — this is `jvm_gc_pause_seconds` from the table above, now visible per-event instead of just as an aggregate metric |
+
+### 5. Read it — no GUI (headless-friendly, JDK-bundled)
+
+```bash
+jfr summary /tmp/resource-exhaustion.jfr
+jfr print --events jdk.ExecutionSample /tmp/resource-exhaustion.jfr | grep -A3 SlowDuplicateFinder
+jfr print --events jdk.ObjectAllocationSample /tmp/resource-exhaustion.jfr | grep -B2 MemoryHogService
+```
+
+### 6. Bonus: catch the actual OOM crash on tape
+
+To see JFR capture the death itself instead of just the buildup, restart
+with a small heap and auto-recording, then trigger it:
+
+```bash
+java -Xmx100m \
+  -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/tmp/heap.hprof \
+  -XX:StartFlightRecording=filename=/tmp/oom-recording.jfr,settings=profile \
+  -jar target/resource-exhaustion-demo-0.0.1-SNAPSHOT.jar
+
+curl "http://localhost:8080/api/buggy/report?rows=2000"   # crashes it
+```
+
+The JVM dies, but `oom-recording.jfr` and `heap.hprof` are both flushed to
+disk automatically — the `.jfr` shows the allocation ramp right up to the
+crash, and `heap.hprof` (opened in Eclipse MAT) shows the exact
+`List<byte[]>` holding everything hostage in `MemoryHogService`.
+
 ## Rule of thumb
 
 Neither bug is a logic error — both return the right answer, every time,
