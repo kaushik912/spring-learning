@@ -127,20 +127,46 @@ the networking note below for why.
   latency actually comes from).
 
 **Why a script instead of a plain `prometheus.yml`**: the obvious scrape
-target, `host.docker.internal:8080`, doesn't always route to the host from
-inside a container. On this project's own dev environment (WSL2 + Docker
-Desktop) it resolved to Docker Desktop's internal gateway, which doesn't
-reach the WSL2 distro the app actually runs in — Prometheus got
-`connection refused` even though the app was correctly listening on
-`0.0.0.0:8080` (confirmed with `ss -tlnp`; `server.address=0.0.0.0` is
-already Spring Boot's default and wouldn't have changed anything — the
-problem was routing between Docker Desktop's VM and WSL2, not what
-interface the app bound to).
+target, `host.docker.internal:8080`, doesn't route to the app on this
+project's own dev environment (WSL2 + Docker Desktop, one WSL distro named
+`Ubuntu`). Every attempted fix was tried and ruled out empirically, not
+just assumed:
 
-Rather than document "manually patch the IP if this breaks for you" as a
-workaround, `start-observability.sh` fixes it directly: it resolves the
-real host IP with `ip route get 1.1.1.1` and renders
-`observability/prometheus/prometheus.yml` from
+| Attempted fix | Result |
+|---|---|
+| `server.address=0.0.0.0` in `application.properties` | No change — the app already binds to `*:8080` by default; confirmed with `ss -tlnp` |
+| `extra_hosts: ["host.docker.internal:host-gateway"]` in `docker-compose.yml` | No change — `host.docker.internal` still resolves to the same IP either way |
+| Docker Desktop → Settings → Resources → WSL Integration, explicitly enabling the `Ubuntu` distro (not just the "default WSL distro" checkbox) + restarting Docker Desktop | No change |
+
+In every case `host.docker.internal` resolved to `192.168.65.254` from
+inside a container, and every connection attempt got a clean **`connection
+refused`** — not a timeout. That distinction matters: a timeout would mean
+"no route to that address." A refusal means the packet *did* reach a real
+machine and got a TCP reset back because nothing is listening on port 8080
+*there*.
+
+The actual architecture, confirmed via `wsl -l -v` on the Windows host:
+
+```
+NAME              STATE           VERSION
+* Ubuntu            Running         2
+  docker-desktop    Running         2
+```
+
+Docker Desktop runs containers inside its **own** separate WSL2 distro
+(`docker-desktop`), not inside `Ubuntu`. `host.docker.internal` resolves to
+the Windows host from that distro's perspective — a real, reachable
+machine, just one with nothing bound to port 8080, since the Spring Boot
+app runs inside the sibling `Ubuntu` distro instead. WSL Integration only
+grants the `docker` CLI/daemon socket access from within `Ubuntu`; it
+doesn't merge `Ubuntu`'s network namespace into "host" as Docker Desktop
+defines it. This is Docker Desktop's WSL2 architecture working as designed,
+not a misconfiguration — there is no toggle that changes it.
+
+What *does* work: sibling WSL2 distros can reach each other directly over
+the shared internal Hyper-V vSwitch. `start-observability.sh` uses exactly
+that — it resolves `Ubuntu`'s own real IP with `ip route get 1.1.1.1` and
+renders `observability/prometheus/prometheus.yml` from
 `prometheus.yml.template` before starting the stack, so Prometheus always
 gets a real, reachable address instead of a hostname that may or may not
 route correctly on your setup. The generated `prometheus.yml` is
