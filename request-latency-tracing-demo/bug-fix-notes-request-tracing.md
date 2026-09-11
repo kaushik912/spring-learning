@@ -102,11 +102,14 @@ really would be separate collaborators in most real codebases.)
 ## Seeing it yourself
 
 ```
-docker compose up -d          # Zipkin :9411, Prometheus :9090, Grafana :3000
+./start-observability.sh       # Zipkin :9411, Prometheus :9090, Grafana :3000
 ./mvnw spring-boot:run         # app on :8080
 curl http://localhost:8080/api/fixed/orders/1
 curl http://localhost:8080/api/buggy/orders/1
 ```
+
+Use `./start-observability.sh`, not `docker compose up -d` directly — see
+the networking note below for why.
 
 - **Zipkin** (`http://localhost:9411`) — search by service
   `request-latency-tracing-demo`, open a `/api/fixed/orders/{orderid}`
@@ -123,14 +126,27 @@ curl http://localhost:8080/api/buggy/orders/1
   and the fixed endpoint's per-step breakdown underneath it (where that
   latency actually comes from).
 
-**WSL2 + Docker Desktop note**: Prometheus's scrape target is
-`host.docker.internal:8080`, which works on most setups but was
-unreachable in this project's own dev environment (WSL2 via Docker
-Desktop) — the container needs the app's actual WSL IP. If Prometheus's
-target shows `down` at `http://localhost:9090/targets`, find the right
-address with `ip addr show eth0` (look for the `inet` line) and swap the
-target in `observability/prometheus/prometheus.yml`, then
-`docker compose up -d --force-recreate prometheus`.
+**Why a script instead of a plain `prometheus.yml`**: the obvious scrape
+target, `host.docker.internal:8080`, doesn't always route to the host from
+inside a container. On this project's own dev environment (WSL2 + Docker
+Desktop) it resolved to Docker Desktop's internal gateway, which doesn't
+reach the WSL2 distro the app actually runs in — Prometheus got
+`connection refused` even though the app was correctly listening on
+`0.0.0.0:8080` (confirmed with `ss -tlnp`; `server.address=0.0.0.0` is
+already Spring Boot's default and wouldn't have changed anything — the
+problem was routing between Docker Desktop's VM and WSL2, not what
+interface the app bound to).
+
+Rather than document "manually patch the IP if this breaks for you" as a
+workaround, `start-observability.sh` fixes it directly: it resolves the
+real host IP with `ip route get 1.1.1.1` and renders
+`observability/prometheus/prometheus.yml` from
+`prometheus.yml.template` before starting the stack, so Prometheus always
+gets a real, reachable address instead of a hostname that may or may not
+route correctly on your setup. The generated `prometheus.yml` is
+git-ignored (it's machine-specific); only the template is committed. If
+`ip route` isn't available (non-Linux), the script falls back to
+`host.docker.internal`.
 
 ## Rule of thumb
 
