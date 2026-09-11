@@ -199,6 +199,30 @@ git-ignored (it's machine-specific); only the template is committed. If
 `ip route` isn't available (non-Linux), the script falls back to
 `host.docker.internal`.
 
+## Alerting (happy path)
+
+Once the metric exists, alerting on it is a Grafana Alerting rule pointed
+at Prometheus — no extra infrastructure beyond what's already running.
+
+**Query** (average pricing latency over the trailing 1 minute, in ms):
+
+```promql
+rate(order_pricing_seconds_sum[1m]) / rate(order_pricing_seconds_count[1m]) * 1000 > 400
+```
+
+`rate()` over both `_sum` and `_count` gives total-time-over-total-calls
+for just the recent window, so it settles back down once traffic passes —
+using `_sum` or `_count` alone here would be wrong: `_count` isn't a time
+value, and raw `_sum` conflates call volume with actual per-call speed.
+
+**Setup**: Grafana → Alerting → Alert rules → New alert rule → this query
+as the condition → contact point set to a webhook pointed at
+[webhooktest.net](https://webhooktest.net/) (a scratch endpoint for
+inspecting webhook payloads — swap for Slack/email/PagerDuty in anything
+real). Verified end-to-end: firing the pricing call past the 400ms
+threshold for the "for" duration triggered the rule and the payload
+landed on webhooktest.net's inbox.
+
 ## Rule of thumb
 
 An aggregate timer on an endpoint tells you *that* something is slow, not
