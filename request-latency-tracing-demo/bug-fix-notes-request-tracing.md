@@ -129,8 +129,36 @@ the networking note below for why.
 **Why a script instead of a plain `prometheus.yml`**: the obvious scrape
 target, `host.docker.internal:8080`, doesn't route to the app on this
 project's own dev environment (WSL2 + Docker Desktop, one WSL distro named
-`Ubuntu`). Every attempted fix was tried and ruled out empirically, not
-just assumed:
+`Ubuntu`). The short version, visually:
+
+```mermaid
+flowchart TB
+    subgraph DD["docker-desktop (Docker's own WSL2 distro)"]
+        P["Prometheus container"]
+    end
+    subgraph UB["Ubuntu (your WSL2 distro)"]
+        APP["Spring Boot app<br/>listening on 0.0.0.0:8080<br/>real IP 172.20.32.236"]
+    end
+    WIN["Windows host<br/>nothing listening on :8080 here"]
+
+    P -->|"① host.docker.internal<br/>resolves to 192.168.65.254"| WIN
+    WIN --> FAIL["❌ connection refused"]
+
+    P -->|"② scrape 172.20.32.236:8080 directly<br/>(what start-observability.sh does)"| APP
+    APP --> OK["✅ scrape succeeds"]
+
+    classDef fail fill:#4a1518,stroke:#e5484d,color:#fff
+    classDef ok fill:#0f3d24,stroke:#30a46c,color:#fff
+    class FAIL fail
+    class OK ok
+```
+
+`docker-desktop` and `Ubuntu` are **sibling** WSL2 distros, not
+parent/child — Docker Desktop runs every container inside its own distro,
+never inside yours. `host.docker.internal` means "the Windows host" from
+that sibling's point of view, which is a real, reachable machine — just
+one with nothing bound to port 8080. Every attempted fix below was tried
+and ruled out empirically, not just assumed:
 
 | Attempted fix | Result |
 |---|---|
@@ -145,7 +173,8 @@ refused`** — not a timeout. That distinction matters: a timeout would mean
 machine and got a TCP reset back because nothing is listening on port 8080
 *there*.
 
-The actual architecture, confirmed via `wsl -l -v` on the Windows host:
+The diagram's shape is confirmed directly by `wsl -l -v` on the Windows
+host — two distros, siblings, not parent/child:
 
 ```
 NAME              STATE           VERSION
@@ -153,15 +182,11 @@ NAME              STATE           VERSION
   docker-desktop    Running         2
 ```
 
-Docker Desktop runs containers inside its **own** separate WSL2 distro
-(`docker-desktop`), not inside `Ubuntu`. `host.docker.internal` resolves to
-the Windows host from that distro's perspective — a real, reachable
-machine, just one with nothing bound to port 8080, since the Spring Boot
-app runs inside the sibling `Ubuntu` distro instead. WSL Integration only
-grants the `docker` CLI/daemon socket access from within `Ubuntu`; it
-doesn't merge `Ubuntu`'s network namespace into "host" as Docker Desktop
-defines it. This is Docker Desktop's WSL2 architecture working as designed,
-not a misconfiguration — there is no toggle that changes it.
+WSL Integration only grants the `docker` CLI/daemon socket access from
+within `Ubuntu`; it doesn't merge `Ubuntu`'s network namespace into "host"
+as Docker Desktop defines it. This is Docker Desktop's WSL2 architecture
+working as designed, not a misconfiguration — there is no toggle that
+changes it.
 
 What *does* work: sibling WSL2 distros can reach each other directly over
 the shared internal Hyper-V vSwitch. `start-observability.sh` uses exactly
