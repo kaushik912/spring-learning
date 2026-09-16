@@ -74,6 +74,16 @@ an app restart without replaying the full topic from scratch. The query path
 / `PaymentSimulator`) — reading the total never touches the consumer, and a slow query can't
 back up ingestion.
 
+**Persistence, in short:**
+- The store is durable two ways: RocksDB files on local disk (`state.dir`) as a fast
+  cache, backed by a Kafka changelog topic as the real source of truth — if the local
+  disk is ever missing/wiped, Kafka Streams rebuilds it from the changelog on startup.
+- That said, `docker-compose.yml` here doesn't mount a volume for the broker, so `docker
+  compose down` deletes the container and the changelog topic with it — the running total
+  does **not** survive that. Add a named volume if you want it to.
+- Old windows aren't kept forever either way — `withRetention(...)` drops them once
+  they age past window size + grace, since the whole point is "last 24h," not history.
+
 ## Correctness note: which FX rate to use
 
 A payments company must value a past transfer using the FX rate that applied **when it

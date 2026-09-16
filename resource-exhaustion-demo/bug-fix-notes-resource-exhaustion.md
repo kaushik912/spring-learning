@@ -233,6 +233,38 @@ jfr print --events jdk.ExecutionSample /tmp/resource-exhaustion.jfr | grep -A3 S
 jfr print --events jdk.ObjectAllocationSample /tmp/resource-exhaustion.jfr | grep -B2 MemoryHogService
 ```
 
+### 6. Read it — `jfr view` (needs JDK 21+)
+
+`jfr view` has pre-built report templates so you don't hand-parse `jfr print`
+output — no more `grep`/`awk`. **Requires the `jfr` binary from JDK 21 or
+later** (`jfr view: unknown command 'view'` on JDK 17/8 — the subcommand just
+doesn't exist there). The recording file itself doesn't need to be re-made —
+JFR's format is forward-compatible, so a JDK 17-recorded `.jfr` reads fine
+with a JDK 21 `jfr` tool. If only JDK 17 is on `PATH`, point at the JDK 21
+binary directly, e.g. `/usr/lib/jvm/java-21-openjdk-amd64/bin/jfr`.
+
+```bash
+# list every available view name
+jfr view /tmp/resource-exhaustion.jfr
+
+# CPU bug — ranked list of hottest methods by sample count
+jfr view hot-methods /tmp/resource-exhaustion.jfr
+
+# Memory bug — which class + which call site is allocating the most
+jfr view allocation-by-class /tmp/resource-exhaustion.jfr
+jfr view allocation-by-site /tmp/resource-exhaustion.jfr
+
+# Either bug — GC pause table: heap-before vs heap-after per collection
+jfr view gc /tmp/resource-exhaustion.jfr
+```
+
+On this recording: `hot-methods` puts `SlowDuplicateFinder.findDuplicates` at
+**41.78%** of all samples, standalone; `allocation-by-site` puts
+`MemoryHogService.buildReport(int)` at **97.73%** of allocation pressure. The
+`gc` table is the tell for "is this actually a leak" — watch **Heap After
+GC** stay close to **Heap Before GC** across consecutive rows (GC barely
+reclaiming anything) and **Longest Pause** climbing as the heap grows.
+
 ### 6. Bonus: catch the actual OOM crash on tape
 
 To see JFR capture the death itself instead of just the buildup, restart
