@@ -1,0 +1,15 @@
+spring:
+  kafka:
+    streams:
+      application-id: payment-volume-streaming-demo-demo
+
+payments:
+  window:
+    size: PT2M
+    advance: PT10S
+    grace: PT5S
+  fx:
+    jitter-interval: PT5S
+    jitter-magnitude-percent: 3
+  simulator:
+    interval: PT0.3S

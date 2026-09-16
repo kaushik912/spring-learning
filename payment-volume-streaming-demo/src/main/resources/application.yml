@@ -1,0 +1,25 @@
+spring:
+  application:
+    name: payment-volume-streaming-demo
+  kafka:
+    bootstrap-servers: localhost:9092
+    producer:
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+    streams:
+      application-id: payment-volume-streaming-demo
+      properties:
+        commit.interval.ms: 1000
+
+payments:
+  window:
+    size: PT24H
+    advance: PT1H
+    grace: PT5M
+  fx:
+    jitter-interval: PT30S
+    jitter-magnitude-percent: 1.5
+  simulator:
+    enabled: true
+    interval: PT0.5S
+    min-amount: 10
+    max-amount: 5000
