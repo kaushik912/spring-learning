@@ -10,7 +10,7 @@ Java 21, Boot 3.5.16, spring-kafka (JSON, no type headers), JdbcTemplate + Flywa
 - Test: `mvn test` (integration-tests module, Testcontainers, needs Docker). No mvnw in repo.
 
 ## Layout
-Maven multi-module: `common` (Command/Reply records, `SagaTracing`, shared logback-spring.xml), `order-service` (SagaOrchestrator = state machine), `inventory-service`, `payment-service`, `integration-tests`.
+Maven multi-module: `common` (Command/Reply records, `SagaTracing`, shared logback-spring.xml), `order-service` (SagaOrchestrator = entry points + tracing + Kafka send; SagaEngine = `@Transactional` state machine, returns next Command, send happens after commit), `inventory-service`, `payment-service`, `integration-tests`.
 
 ## Gotchas
 - Config files are `<service>.yml` not application.yml; each `*Application.start()` sets `spring.config.name`. Needed so integration-tests can run 3 services in one JVM. Flyway locations are per service (`db/migration/<svc>`) for same reason.

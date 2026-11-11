@@ -34,9 +34,9 @@ Set suspend policy to **Thread** (not All) so Kafka heartbeats and the scheduler
 
 | Where | Why |
 |---|---|
-| `SagaOrchestrator.java:64` `start` | saga begins |
+| `SagaOrchestrator.java:45` `start` | saga begins |
 | `inventory/CommandListener.java:31` `onCommand` | inventory receives command |
-| `SagaOrchestrator.java:92` `onReply` / `:111` `applyReply` | orchestrator state machine |
+| `SagaOrchestrator.java:63` `onReply` / `SagaEngine.java:70` `applyReply` | reply arrives / state machine |
 | `payment/CommandListener.java` `onCommand` | payment receives command |
 
 ## 4. Trigger and step

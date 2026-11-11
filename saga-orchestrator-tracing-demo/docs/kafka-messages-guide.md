@@ -70,7 +70,7 @@ Take the `traceparent` from a message: `00-<traceId>-<spanId>-01`.
 Code that sends each message:
 | Message | Sent at |
 |---|---|
-| 1, 3 (commands) | `SagaOrchestrator.send()` line 298 |
+| 1, 3 (commands) | `SagaOrchestrator.send()` line 118 |
 | 2 (inventory reply) | `inventory/CommandListener.java:35` |
 | 4 (payment reply) | `payment/CommandListener.java` (`kafka.send(ORDER_REPLIES, ...)`) |
 
