@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Shared by all services. JSON lines on stdout.
+  trace_id / span_id / trace_flags are put into the MDC by the OTel agent (logback-mdc instrumentation);
+  order_id is put into the MDC by our code. LogstashEncoder writes every MDC entry as a JSON field.
+  Convention: INFO = business milestone (saga state change). Everything else is DEBUG.
+-->
+<configuration>
+    <springProperty scope="context" name="service" source="spring.application.name" defaultValue="app"/>
+
+    <appender name="JSON" class="ch.qos.logback.core.ConsoleAppender">
+        <!-- "service" context property above is emitted automatically as a JSON field -->
+        <encoder class="net.logstash.logback.encoder.LogstashEncoder"/>
+    </appender>
+
+    <logger name="com.example.saga" level="${SAGA_LOG_LEVEL:-INFO}"/>
+
+    <root level="WARN">
+        <appender-ref ref="JSON"/>
+    </root>
+</configuration>

@@ -1,0 +1,39 @@
+spring:
+  application:
+    name: payment-service
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/payment}
+    username: ${DB_USER:saga}
+    password: ${DB_PASSWORD:saga}
+  flyway:
+    locations: classpath:db/migration/payment
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP:localhost:9092}
+    consumer:
+      group-id: payment-service
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.value.default.type: com.example.saga.common.Command
+        spring.json.use.type.headers: false
+        spring.json.trusted.packages: com.example.saga.common
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      properties:
+        spring.json.add.type.headers: false
+
+server:
+  port: ${PORT:8082}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus
+
+payment:
+  max-amount: 1000          # amount above this -> PaymentFailed
+  timeout-amount: 777       # this exact amount -> sleep (simulates gateway timeout)
+  timeout-sleep: 10s

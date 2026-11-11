@@ -1,0 +1,42 @@
+# Named order-service.yml (not application.yml) so the integration-tests module can run all three
+# services in one JVM without their config files shadowing each other. See OrderServiceApplication.
+spring:
+  application:
+    name: order-service
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/orders}
+    username: ${DB_USER:saga}
+    password: ${DB_PASSWORD:saga}
+  flyway:
+    locations: classpath:db/migration/order
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP:localhost:9092}
+    consumer:
+      group-id: order-service
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.value.default.type: com.example.saga.common.Reply
+        spring.json.use.type.headers: false
+        spring.json.trusted.packages: com.example.saga.common
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      properties:
+        spring.json.add.type.headers: false
+
+server:
+  port: ${PORT:8080}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus
+
+saga:
+  step-timeout: 5s            # no reply within this -> start compensation
+  retry-base: 2s              # compensation resend delay: base * 2^attempt
+  max-compensation-attempts: 5
+  scan-interval: 1s
