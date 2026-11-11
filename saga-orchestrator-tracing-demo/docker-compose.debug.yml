@@ -1,0 +1,28 @@
+# Debug overlay: remote-debug ports + timeouts relaxed so long breakpoint pauses don't change the flow.
+#   docker compose -f docker-compose.yml -f docker-compose.debug.yml up --build
+# Attach IDE (Remote JVM Debug): order 5005, inventory 5006, payment 5007.
+# Breakpoint suspend policy: "Thread" (not "All"), so Kafka heartbeat/scheduler threads keep running.
+
+x-debug-env: &debug-env
+  JAVA_TOOL_OPTIONS: "-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005"
+  # Kafka evicts a consumer that doesn't poll within max.poll.interval.ms (default 5m) -> rebalance + redelivery.
+  SPRING_KAFKA_CONSUMER_PROPERTIES_MAX_POLL_INTERVAL_MS: "86400000"   # 24h
+
+services:
+  order-service:
+    environment:
+      <<: *debug-env
+      SAGA_STEP_TIMEOUT: 24h   # default 5s -> saga.timeout -> compensation while you are paused
+      SAGA_RETRY_BASE: 24h     # compensation resend delay, same reason
+    ports:
+      - "5005:5005"
+  inventory-service:
+    environment:
+      <<: *debug-env
+    ports:
+      - "5006:5005"
+  payment-service:
+    environment:
+      <<: *debug-env
+    ports:
+      - "5007:5005"
