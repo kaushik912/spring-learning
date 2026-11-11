@@ -1,0 +1,18 @@
+# Kafka UI overlay (opt-in via the "ui" profile, so a plain `up` does not start it).
+#   docker compose -f docker-compose.yml -f docker-compose.kafka-ui.yml --profile ui up -d kafka-ui
+# Open http://localhost:8090  (cluster "local": topics, messages w/ key + headers incl. traceparent, consumer lag).
+# Runs inside the compose network -> talks to kafka:9092; no host listener (kafka-host overlay) needed.
+# Stop it: docker compose -f docker-compose.yml -f docker-compose.kafka-ui.yml --profile ui stop kafka-ui
+
+services:
+  kafka-ui:
+    image: provectuslabs/kafka-ui:v0.7.2
+    profiles: ["ui"]
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+    ports:
+      - "8090:8080"      # 8080 is taken by order-service
+    depends_on:
+      kafka:
+        condition: service_healthy
