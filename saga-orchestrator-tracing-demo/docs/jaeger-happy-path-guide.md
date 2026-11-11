@@ -49,12 +49,12 @@ Expected tree (README section c). Do it in this order. For each step: find the s
 
 ### Step 2 - `saga.start` (order)
 - Tags: `saga.state=STARTED`, `saga.step=RESERVE_INVENTORY`.
-- Code: `SagaOrchestrator.java:50` `SagaTracing.start("saga.start", ...)`, then `engine.begin(...)` (line 53).
-- Inside it, look for child spans `INSERT orders.saga_instance` and `INSERT ... saga_step_log` (agent JDBC spans) = `repo.insert` + `repo.log` in `SagaEngine.java:62-63` (the DB transaction lives in `SagaEngine`, `@Transactional`).
-- `SagaEngine.java:60-61` saves `traceId` + `traceParent` into the DB. That's how `/saga` gives you the trace id, and how timeouts rejoin the trace.
+- Code: `SagaOrchestrator.java:48` `SagaTracing.start("saga.start", ...)`, then `traced(...)` runs `engine.begin(...)` inside it (line 50).
+- Inside it, look for child spans `INSERT orders.saga_instance` and `INSERT ... saga_step_log` (agent JDBC spans) = `repo.insert` + `repo.log` in `SagaEngine.java:61-62` (the DB transaction lives in `SagaEngine`, `@Transactional`).
+- `SagaEngine.java:59-60` saves `traceId` + `traceParent` into the DB. That's how `/saga` gives you the trace id, and how timeouts rejoin the trace.
 
 ### Step 3 - `inventory-commands publish` (order)
-- Agent span, child of `saga.start`. Made by `kafka.send(...)` at `SagaOrchestrator.java:118` (`send()`, called after `engine.begin` has committed, line 53, still inside the span).
+- Agent span, child of `saga.start`. Made by `kafka.send(...)` at `SagaOrchestrator.java:105` (`send()`, called after `engine.begin` has committed, line 50, still inside the span).
 - Topic comes from `CommandType.RESERVE_INVENTORY` -> `Topics.INVENTORY_COMMANDS`.
 - **This is the hop where the trace crosses from order to Kafka.**
 
@@ -68,12 +68,12 @@ Expected tree (README section c). Do it in this order. For each step: find the s
 - Then line 35 `kafka.send(ORDER_REPLIES, reply)` -> child `order-replies publish`.
 
 ### Step 6 - `order-replies process` then `saga.reply INVENTORY_RESERVED` (order)
-- Trace is back in order-service. Reply consumer: `ReplyListener.java:18` -> `SagaOrchestrator.onReply` (line 63) creates `saga.reply <TYPE>` (line 67), then calls `engine.applyReply` (line 69).
-- Inside: `repo.lockByOrderId` = `SELECT ... FOR UPDATE` span (row lock), then `SagaEngine.applyReply` (line 70) switch on `INVENTORY_RESERVED`.
+- Trace is back in order-service. Reply consumer: `ReplyListener.java:18` -> `SagaOrchestrator.onReply` (line 56) creates `saga.reply <TYPE>` (line 59), then `traced(...)` calls `engine.applyReply` inside it (line 60).
+- Inside: `repo.lockByOrderId` = `SELECT ... FOR UPDATE` span (row lock), then `SagaEngine.applyReply` (line 69) switch on `INVENTORY_RESERVED`.
 
 ### Step 7 - `saga.transition STARTED->INVENTORY_RESERVED` (order)
-- Code: `SagaEngine.transition()` at line 192. Child spans: `UPDATE saga_instance`, `INSERT saga_step_log`. Also emits the INFO log line.
-- Then `sendStep(... AUTHORIZE_PAYMENT)` (`SagaEngine.java:81`) arms the 5s timeout (`nextActionAt`) and returns the next command.
+- Code: `SagaEngine.transition()` at line 191. Child spans: `UPDATE saga_instance`, `INSERT saga_step_log`. Also emits the INFO log line.
+- Then `sendStep(... AUTHORIZE_PAYMENT)` (`SagaEngine.java:80`) arms the 5s timeout (`nextActionAt`) and returns the next command.
 
 ### Step 8 - `payment-commands publish` -> `payment-commands process` -> `payment.handle AUTHORIZE_PAYMENT` -> `order-replies publish`
 - Same pattern as steps 3-5, but payment-service. Code: `payment-service/.../CommandListener.java`.
@@ -81,7 +81,7 @@ Expected tree (README section c). Do it in this order. For each step: find the s
 
 ### Step 9 - `saga.reply PAYMENT_AUTHORIZED` (order) + 2 transitions
 - `saga.transition INVENTORY_RESERVED->PAYMENT_AUTHORIZED` then `PAYMENT_AUTHORIZED->COMPLETED`.
-- Code: `SagaEngine.java:90-97`. Nothing is sent afterwards -> trace ends. No more `publish` spans = saga done.
+- Code: `SagaEngine.java:89-96`. Nothing is sent afterwards -> trace ends. No more `publish` spans = saga done.
 
 ## 4. The pattern (what to remember)
 

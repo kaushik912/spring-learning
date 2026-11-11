@@ -5,6 +5,7 @@ import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.SpanBuilder;
 import io.opentelemetry.api.trace.SpanContext;
 import io.opentelemetry.api.trace.SpanId;
+import io.opentelemetry.api.trace.StatusCode;
 import io.opentelemetry.api.trace.TraceFlags;
 import io.opentelemetry.api.trace.TraceId;
 import io.opentelemetry.api.trace.TraceState;
@@ -65,6 +66,22 @@ public final class SagaTracing {
             b.addLink(link);
         }
         return b.startSpan();
+    }
+
+    /**
+     * Run {@code body} with {@code span} as the current span, then end it. A RuntimeException is recorded on the
+     * span (status ERROR) and rethrown. Anything created inside (JDBC, Kafka send, child spans) is a child.
+     */
+    public static void inSpan(Span span, Runnable body) {
+        try (Scope ignored = span.makeCurrent()) {
+            body.run();
+        } catch (RuntimeException e) {
+            span.recordException(e);
+            span.setStatus(StatusCode.ERROR);
+            throw e;
+        } finally {
+            span.end();
+        }
     }
 
     /** W3C traceparent of the current span, to persist (e.g. in saga_instance). Null if no active trace. */

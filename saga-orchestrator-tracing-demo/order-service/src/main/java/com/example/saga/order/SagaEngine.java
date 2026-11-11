@@ -5,7 +5,6 @@ import com.example.saga.common.CommandType;
 import com.example.saga.common.Reply;
 import com.example.saga.common.SagaTracing;
 import io.opentelemetry.api.trace.Span;
-import io.opentelemetry.context.Scope;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -193,15 +192,13 @@ public class SagaEngine {
         SagaState from = s.state;
         Span span = SagaTracing.start("saga.transition " + from + "->" + to, s.orderId.toString(), to.name(),
                 step == null ? null : step.name(), step == null ? null : key(s.orderId, step));
-        try (Scope ignored = span.makeCurrent()) {
+        SagaTracing.inSpan(span, () -> {
             s.state = to;
             s.currentStep = step;
             repo.update(s);
             repo.log(s, from, to, step, detail, s.traceId);
             log.info("saga {} {} -> {} step={} ({})", s.orderId, from, to, step, detail);
-        } finally {
-            span.end();
-        }
+        });
     }
 
     /** Arm the step timeout (or retry timer) for a command about to be sent and build it. */
