@@ -84,6 +84,7 @@ class SagaFlowIT {
         assertThat(states(saga)).containsExactly(
                 "STARTED", "INVENTORY_RESERVED", "PAYMENT_AUTHORIZED", "COMPLETED");
         assertThat(stock("SKU-1")).isEqualTo(before - 2);
+        assertThat(customerView(orderId)).containsEntry("status", "CONFIRMED").doesNotContainKey("reason");
     }
 
     @Test
@@ -97,6 +98,7 @@ class SagaFlowIT {
         assertThat(states(saga)).contains("INVENTORY_RESERVED", "COMPENSATING", "COMPENSATED")
                 .doesNotContain("PAYMENT_AUTHORIZED", "COMPLETED");
         assertThat(stock("SKU-1")).as("reserved stock was given back").isEqualTo(before);
+        assertThat(customerView(orderId)).containsEntry("status", "FAILED").containsEntry("reason", "PAYMENT_DECLINED");
     }
 
     @Test
@@ -106,9 +108,15 @@ class SagaFlowIT {
 
         assertThat(saga.get("state")).isEqualTo("COMPENSATED");
         assertThat(states(saga)).containsExactly("STARTED", "COMPENSATING", "COMPENSATED");
+        assertThat(customerView(orderId)).containsEntry("status", "FAILED").containsEntry("reason", "OUT_OF_STOCK");
     }
 
     // ------------------------------------------------------------------ helpers
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> customerView(String orderId) {
+        return http.get().uri("/orders/{id}", orderId).retrieve().body(Map.class);
+    }
 
     private String placeOrder(String sku, int qty, long amount) {
         Map<?, ?> resp = http.post().uri("/orders").contentType(org.springframework.http.MediaType.APPLICATION_JSON)

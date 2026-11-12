@@ -17,6 +17,7 @@ public class Saga {
     boolean needsRelease;
     boolean needsVoid;
     int attempts;
+    FailureReason failureReason; // set when compensation starts; null while healthy
     Instant nextActionAt;
     String traceId;
     String traceParent;

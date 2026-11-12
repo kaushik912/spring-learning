@@ -30,6 +30,13 @@ public class OrderController {
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(Map.of("orderId", orderId));
     }
 
+    /** Customer-facing result: PENDING / CONFIRMED / FAILED (+ reason and message). Poll this after POST /orders. */
+    @GetMapping("/orders/{orderId}")
+    public ResponseEntity<OrderStatus> status(@PathVariable UUID orderId) {
+        return repo.findByOrderId(orderId).map(s -> ResponseEntity.ok(OrderStatus.from(s)))
+                .orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
     /** Saga state + step timeline. trace_id links straight to Jaeger (localhost:16686/trace/{traceId}). */
     @GetMapping("/orders/{orderId}/saga")
     public ResponseEntity<Map<String, Object>> saga(@PathVariable UUID orderId) {

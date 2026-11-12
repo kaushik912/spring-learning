@@ -83,7 +83,7 @@ public class SagaEngine {
             case INVENTORY_REJECTED -> {
                 if (s.state == SagaState.STARTED) {
                     // nothing to undo: reserve never succeeded
-                    return compensate(s, false, false, r.reason());
+                    return compensate(s, false, false, FailureReason.OUT_OF_STOCK, r.reason());
                 }
             }
             case PAYMENT_AUTHORIZED -> {
@@ -98,7 +98,7 @@ public class SagaEngine {
             case PAYMENT_FAILED -> {
                 if (s.state == SagaState.INVENTORY_RESERVED) {
                     // payment never happened -> only the inventory must be undone
-                    return compensate(s, true, false, r.reason());
+                    return compensate(s, true, false, FailureReason.PAYMENT_DECLINED, r.reason());
                 }
             }
             case INVENTORY_RELEASED -> {
@@ -127,8 +127,8 @@ public class SagaEngine {
             return null; // handled meanwhile by a reply
         }
         return switch (s.state) {
-            case STARTED -> compensate(s, true, false, "timeout waiting for inventory");
-            case INVENTORY_RESERVED -> compensate(s, true, true, "timeout waiting for payment");
+            case STARTED -> compensate(s, true, false, FailureReason.TEMPORARY_ERROR, "timeout waiting for inventory");
+            case INVENTORY_RESERVED -> compensate(s, true, true, FailureReason.TEMPORARY_ERROR, "timeout waiting for payment");
             case COMPENSATING -> retryCompensation(s);
             default -> null;
         };
@@ -136,8 +136,9 @@ public class SagaEngine {
 
     // ---------------------------------------------------------------- compensation
 
-    /** Enter COMPENSATING, remembering which undo actions are still owed. */
-    private Command compensate(Saga s, boolean release, boolean voidPayment, String reason) {
+    /** Enter COMPENSATING, remembering which undo actions are still owed and the customer-facing failure code. */
+    private Command compensate(Saga s, boolean release, boolean voidPayment, FailureReason failure, String reason) {
+        s.failureReason = failure;
         s.needsRelease = release;
         s.needsVoid = voidPayment;
         s.attempts = 0;

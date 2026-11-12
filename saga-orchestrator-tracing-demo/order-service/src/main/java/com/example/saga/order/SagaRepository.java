@@ -28,6 +28,8 @@ public class SagaRepository {
         s.needsRelease = rs.getBoolean("needs_release");
         s.needsVoid = rs.getBoolean("needs_void");
         s.attempts = rs.getInt("attempts");
+        String reason = rs.getString("failure_reason");
+        s.failureReason = reason == null ? null : FailureReason.valueOf(reason);
         Timestamp next = rs.getTimestamp("next_action_at");
         s.nextActionAt = next == null ? null : next.toInstant();
         s.traceId = rs.getString("trace_id");
@@ -54,8 +56,9 @@ public class SagaRepository {
     void update(Saga s) {
         jdbc.update("""
                 update saga_instance set state=?, current_step=?, needs_release=?, needs_void=?, attempts=?,
-                  next_action_at=?, step_trace_parent=?, updated_at=now() where id=?""",
+                  failure_reason=?, next_action_at=?, step_trace_parent=?, updated_at=now() where id=?""",
                 s.state.name(), name(s.currentStep), s.needsRelease, s.needsVoid, s.attempts,
+                s.failureReason == null ? null : s.failureReason.name(),
                 ts(s.nextActionAt), s.stepTraceParent, s.id);
     }
 
