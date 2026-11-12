@@ -7,7 +7,7 @@ Stack: Java 21, Spring Boot 3.5, spring-kafka, Postgres (1 DB/service, Flyway), 
 
 | Service | Port | Role |
 |---|---|---|
-| order-service | 8080 | saga orchestrator, `POST /orders`, `GET /orders/{id}/saga` |
+| order-service | 8080 | saga orchestrator, `POST /orders`, `GET /orders/{id}` (customer view), `GET /orders/{id}/saga` (debug view) |
 | inventory-service | 8081 | Reserve/ReleaseInventory (SKU-1 qty 10, SKU-2 qty 0) |
 | payment-service | 8082 | Authorize/VoidPayment (amount>1000 fails, 777 = 10s hang) |
 
@@ -32,7 +32,13 @@ order SKU-1 777     # 4. payment gateway hang -> timeout (5s) -> release + void 
 ```
 Each returns `202 {"orderId":"..."}` immediately. Then:
 ```bash
-curl -s localhost:8080/orders/<orderId>/saga | jq     # state, timeline, traceId
+curl -s localhost:8080/orders/<orderId> | jq          # customer view: status, reason, message
+curl -s localhost:8080/orders/<orderId>/saga | jq     # debug view: state, timeline, traceId
+```
+Customer view maps internal states: `PENDING` (incl. compensating), `CONFIRMED` (COMPLETED), `FAILED` (COMPENSATED) with a `reason`:
+`OUT_OF_STOCK`, `PAYMENT_DECLINED` or `TEMPORARY_ERROR` (timeout). Example:
+```json
+{"orderId":"...","status":"FAILED","reason":"OUT_OF_STOCK","message":"Sorry, this item is out of stock. You were not charged."}
 ```
 Open `http://localhost:16686/trace/<traceId>` directly, or Jaeger UI -> Service `order-service` -> Find Traces.
 
