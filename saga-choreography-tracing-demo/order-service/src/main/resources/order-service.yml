@@ -1,0 +1,15 @@
+spring:
+  config:
+    import: classpath:saga-common.yml
+  application:
+    name: order-service
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/orders}
+  flyway:
+    locations: classpath:db/migration/order
+  kafka:
+    consumer:
+      group-id: order-service
+
+server:
+  port: ${PORT:8080}

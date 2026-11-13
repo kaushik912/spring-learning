@@ -1,0 +1,15 @@
+spring:
+  config:
+    import: classpath:saga-common.yml
+  application:
+    name: inventory-service
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/inventory}
+  flyway:
+    locations: classpath:db/migration/inventory
+  kafka:
+    consumer:
+      group-id: inventory-service
+
+server:
+  port: ${PORT:8081}

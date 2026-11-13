@@ -1,0 +1,23 @@
+# Shared by all services via `spring.config.import: classpath:saga-common.yml`
+# (services use spring.config.name=<service> instead of application.yml so the integration tests can run
+# all four in one JVM without their config files shadowing each other).
+spring:
+  datasource:
+    username: ${DB_USER:saga}
+    password: ${DB_PASSWORD:saga}
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP:localhost:9092}
+    consumer:
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+    producer:
+      acks: all
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus

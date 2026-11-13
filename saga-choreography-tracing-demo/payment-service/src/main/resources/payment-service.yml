@@ -1,0 +1,18 @@
+spring:
+  config:
+    import: classpath:saga-common.yml
+  application:
+    name: payment-service
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/payment}
+  flyway:
+    locations: classpath:db/migration/payment
+  kafka:
+    consumer:
+      group-id: payment-service
+
+server:
+  port: ${PORT:8082}
+
+payment:
+  slow-gateway-delay: 10s     # amount == 777 simulates a slow gateway

@@ -1,0 +1,15 @@
+spring:
+  config:
+    import: classpath:saga-common.yml
+  application:
+    name: flow-tracker-service
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/flowtracker}
+  flyway:
+    locations: classpath:db/migration/flowtracker
+  kafka:
+    consumer:
+      group-id: flow-tracker-service
+
+server:
+  port: ${PORT:8083}
