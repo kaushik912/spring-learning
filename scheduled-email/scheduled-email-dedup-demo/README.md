@@ -106,7 +106,7 @@ exactlyOnceForAllUsers: true
 |---|---|
 | **DB outbox + `FOR UPDATE SKIP LOCKED`** (Postgres/MySQL 8) | **Used here.** No new infra; workers skip rows other workers hold → no contention. Row locks are held only for the claim statement, not during the send. |
 | **DB outbox + conditional `UPDATE`** (portable, no SKIP LOCKED) | Works anywhere (first version of this demo on H2), but workers fight over the same rows. |
-| **Message queue** (Kafka keyed by userId / SQS / RabbitMQ) | Best for scale and backpressure. At-least-once delivery → consumer still needs idempotency (see `../duplicate-delivery-demo`). Natural next step: publisher produces to Kafka, workers = consumer group; not done here to keep the outbox visible. |
+| **Message queue** (Kafka keyed by userId / SQS / RabbitMQ) | Best for scale and backpressure. At-least-once delivery → consumer still needs idempotency (see `../../duplicate-delivery-demo`). Natural next step: publisher produces to Kafka, workers = consumer group; not done here to keep the outbox visible. |
 | **Partition by user range** (instance k handles `userId % N == k`) | No coordination needed but breaks on scale up/down; no failover |
 | **Scheduler-per-user** (delayed jobs, e.g. JobRunr/db-scheduler) | Libraries doing claim + retry + heartbeat for you; good production shortcut |
 
